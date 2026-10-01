@@ -60,7 +60,9 @@ impl Any {
     /// Unpack the contained message as `T`, but only if the `type_url`
     /// matches `expected_type_url`.
     ///
-    /// Returns `Ok(None)` when the type URL does not match.
+    /// Returns `Ok(None)` when the type URL does not match. The comparison
+    /// is on the whole URL, prefix included. The JSON and text registries
+    /// match by message name under any prefix; this method does not.
     ///
     /// # Errors
     ///
@@ -77,6 +79,10 @@ impl Any {
     }
 
     /// Returns `true` if this [`Any`]'s `type_url` matches the given string.
+    ///
+    /// The comparison is on the whole URL, prefix included. The JSON and text
+    /// registries match by message name under any prefix; this method does
+    /// not.
     pub fn is_type(&self, type_url: &str) -> bool {
         self.type_url == type_url
     }
@@ -232,7 +238,7 @@ impl buffa::text::TextFormat for Any {
                 "value" => self.value = dec.read_bytes()?.into(),
                 _ if name.starts_with('[') => {
                     let (url, bytes) = dec.read_any_expansion(name)?;
-                    self.type_url = url.into();
+                    self.type_url = url.into_owned();
                     self.value = bytes.into();
                 }
                 _ => return Err(dec.unknown_field()),
@@ -280,7 +286,8 @@ mod text_tests {
 // Proto3 JSON for `Any` uses the global `AnyRegistry` to serialize the
 // embedded message with its fields inline (regular messages) or wrapped in a
 // `"value"` key (WKTs). Falls back to base64-encoded `value` when the
-// registry is absent or the type URL is not registered.
+// registry is absent, or neither the type URL nor its message full name is
+// registered.
 
 #[cfg(feature = "json")]
 struct Base64Bytes<'a>(&'a [u8]);
@@ -687,6 +694,63 @@ mod tests {
         }
 
         #[test]
+        fn text_roundtrip_keeps_a_custom_type_url_prefix() {
+            use crate::google::protobuf::SourceContext;
+            use buffa::text::{decode_from_str, encode_to_string};
+            with_registry(|| {
+                // Registered as `type.googleapis.com/...`; found by its name.
+                let type_url = "custom.example/v1/google.protobuf.SourceContext";
+                let sc = SourceContext {
+                    file_name: "a/b.proto".into(),
+                    ..Default::default()
+                };
+                let any = Any::pack(&sc, type_url);
+                let text = encode_to_string(&any);
+                assert_eq!(
+                    text,
+                    r#"[custom.example/v1/google.protobuf.SourceContext] {file_name: "a/b.proto"}"#
+                );
+
+                let back: Any = decode_from_str(&text).unwrap();
+                assert_eq!(back.type_url, type_url);
+                assert_eq!(back.value, any.value);
+
+                // Whitespace inside the brackets is not part of the URL.
+                let spaced: Any = decode_from_str(
+                    r#"[ custom.example / v1 / google.protobuf.SourceContext ] {file_name: "a/b.proto"}"#,
+                )
+                .unwrap();
+                assert_eq!(spaced.type_url, type_url);
+                assert_eq!(spaced.value, any.value);
+            });
+        }
+
+        #[test]
+        fn text_quotes_a_type_url_that_is_unsafe_between_brackets() {
+            use crate::google::protobuf::Empty;
+            use buffa::text::{decode_from_str, encode_to_string};
+            with_registry(|| {
+                // Each URL ends in a registered message name, so each resolves.
+                // Written between brackets, the first would close the name
+                // early and inject an `injected` field; the others would lose
+                // a newline, a space or the text after `#` on the way back.
+                for type_url in [
+                    "a/b] {} injected: true [type.googleapis.com/google.protobuf.Empty",
+                    "a\nb/google.protobuf.Empty",
+                    "a b/google.protobuf.Empty",
+                    "a#b/google.protobuf.Empty",
+                ] {
+                    let any = Any::pack(&Empty::default(), type_url);
+                    let text = encode_to_string(&any);
+                    assert!(text.starts_with("type_url: \""), "{text}");
+
+                    let back: Any = decode_from_str(&text).unwrap();
+                    assert_eq!(back.type_url, type_url);
+                }
+            });
+        }
+
+        #[test]
         fn text_registry_roundtrip_type_and_option() {
             // `Type` carries a repeated message and an enum; `Option` holds
             // an `Any`, so its expansion nests a second registered type.
@@ -989,6 +1053,24 @@ mod tests {
                 let any: Any = serde_json::from_str(json).unwrap();
                 assert_eq!(any.type_url, "example.com/custom.Type");
                 assert_eq!(any.value, vec![0x08, 0x02]);
+            });
+        }
+
+        #[test]
+        fn registered_any_accepts_arbitrary_type_url_prefix() {
+            with_registry(|| {
+                let type_url = "custom.example/v1/google.protobuf.Duration";
+                let duration = Duration::from_secs_nanos(1, 500_000_000);
+                let any = Any::pack(&duration, type_url);
+
+                let json = serde_json::to_value(&any).unwrap();
+                assert_eq!(json["@type"], type_url);
+                assert_eq!(json["value"], "1.500s");
+
+                let decoded: Any = serde_json::from_value(json).unwrap();
+                assert_eq!(decoded.type_url, type_url);
+                let decoded_duration: Duration = decoded.unpack_unchecked().unwrap();
+                assert_eq!(decoded_duration, duration);
             });
         }
 

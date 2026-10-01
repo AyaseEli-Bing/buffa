@@ -232,6 +232,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.use_buf()` | — | Use `buf build` instead of `protoc` for descriptor generation |
 | `.include_file(name)` | — | Generate a module tree file for `include!` (recommended) |
 | `.descriptor_set(path)` | — | Use a pre-compiled `FileDescriptorSet` file |
+| `.descriptor_set_bytes(bytes)` | — | Use a serialized `FileDescriptorSet` held in memory, for example from an in-process compiler. The build script must print `cargo:rerun-if-changed` lines for the files the bytes were built from |
 
 ### Well-known types
 

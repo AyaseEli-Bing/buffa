@@ -1813,6 +1813,323 @@ fn negative_oneof_indices_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn proto3_optional_fields_without_oneofs_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let mut field = scalar_field("value", 1, Type::TYPE_INT32);
+    field.proto3_optional = Some(true);
+
+    assert_rejected_without_mutating_pool(
+        "proto3-optional-without-oneof.proto",
+        "invalid.test.MissingSyntheticOneof",
+        DescriptorProto {
+            name: Some("MissingSyntheticOneof".into()),
+            field: vec![field],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::Proto3OptionalWithoutOneof { field }
+                    if field == "invalid.test.MissingSyntheticOneof.value"
+            ));
+            assert_eq!(
+                err.to_string(),
+                "field invalid.test.MissingSyntheticOneof.value is marked proto3_optional but has no oneof"
+            );
+        },
+    );
+}
+
+/// A two-file set: `extendable.proto` declares `Extendable`, and a second file
+/// with the given `syntax` declares a file-level and a message-nested
+/// extension of it, both marked `proto3_optional`.
+///
+/// protoc sets the flag on an `optional` extension declared in a proto3 file.
+/// It allows such an extension only on an options message; `Extendable`
+/// stands in for one so the set does not need `descriptor.proto`.
+fn proto3_optional_extension_set(
+    syntax: &str,
+) -> buffa_descriptor::generated::descriptor::FileDescriptorSet {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let optional_extension = |name: &str, number: i32| FieldDescriptorProto {
+        extendee: Some(".valid.test.Extendable".into()),
+        proto3_optional: Some(true),
+        ..scalar_field(name, number, Type::TYPE_BOOL)
+    };
+    FileDescriptorSet {
+        file: vec![
+            FileDescriptorProto {
+                name: Some("extendable.proto".into()),
+                package: Some("valid.test".into()),
+                syntax: Some("proto2".into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Extendable".into()),
+                    extension_range: vec![ExtensionRange {
+                        start: Some(100),
+                        end: Some(200),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            FileDescriptorProto {
+                name: Some("proto3-optional-extensions.proto".into()),
+                package: Some("valid.test".into()),
+                dependency: vec!["extendable.proto".into()],
+                syntax: Some(syntax.into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Scope".into()),
+                    extension: vec![optional_extension("nested_flag", 101)],
+                    ..Default::default()
+                }],
+                extension: vec![optional_extension("flag", 100)],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}
+
+/// An extension is never a oneof member, so the oneof rule applies to message
+/// fields only.
+#[test]
+fn proto3_optional_extensions_link_without_a_oneof() {
+    let pool = DescriptorPool::new(proto3_optional_extension_set("proto3"))
+        .expect("proto3 optional extensions link");
+    for name in ["valid.test.flag", "valid.test.Scope.nested_flag"] {
+        let ext = pool
+            .extension_by_name(name)
+            .unwrap_or_else(|| panic!("{name} is registered"));
+        assert_eq!(ext.field().presence(), FieldPresence::Explicit, "{name}");
+    }
+}
+
+#[test]
+fn proto3_optional_extensions_are_rejected_outside_proto3_files() {
+    // A file-level extension and a message-nested one link in different
+    // passes, so each is checked on its own.
+    for (nested, expected_field) in [
+        (false, "valid.test.flag"),
+        (true, "valid.test.Scope.nested_flag"),
+    ] {
+        let mut set = proto3_optional_extension_set("proto2");
+        if nested {
+            set.file[1].extension.clear();
+        } else {
+            set.file[1].message_type[0].extension.clear();
+        }
+        let err = DescriptorPool::new(set).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                PoolError::Proto3OptionalOutsideProto3 { field } if field == expected_field
+            ),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[test]
+fn proto3_optional_fields_must_be_the_only_oneof_member() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{DescriptorProto, OneofDescriptorProto};
+
+    let mut optional = scalar_field("optional_value", 1, Type::TYPE_INT32);
+    optional.oneof_index = Some(0);
+    optional.proto3_optional = Some(true);
+    let mut other = scalar_field("other_value", 2, Type::TYPE_STRING);
+    other.oneof_index = Some(0);
+
+    assert_rejected_without_mutating_pool(
+        "proto3-optional-shared-oneof.proto",
+        "invalid.test.SharedSyntheticOneof",
+        DescriptorProto {
+            name: Some("SharedSyntheticOneof".into()),
+            field: vec![optional, other],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("_optional_value".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::Proto3OptionalOneofHasMultipleMembers {
+                    field,
+                    oneof,
+                    member_count: 2,
+                } if field == "invalid.test.SharedSyntheticOneof.optional_value"
+                    && oneof == "invalid.test.SharedSyntheticOneof._optional_value"
+            ));
+            assert_eq!(
+                err.to_string(),
+                "field invalid.test.SharedSyntheticOneof.optional_value is marked proto3_optional \
+                 but oneof invalid.test.SharedSyntheticOneof._optional_value has 2 members"
+            );
+        },
+    );
+}
+
+#[test]
+fn synthetic_oneofs_must_follow_real_oneofs() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{DescriptorProto, OneofDescriptorProto};
+
+    let mut optional = scalar_field("optional_value", 1, Type::TYPE_INT32);
+    optional.oneof_index = Some(0);
+    optional.proto3_optional = Some(true);
+    let mut real = scalar_field("real_value", 2, Type::TYPE_STRING);
+    real.oneof_index = Some(1);
+
+    assert_rejected_without_mutating_pool(
+        "proto3-optional-oneof-order.proto",
+        "invalid.test.WrongOneofOrder",
+        DescriptorProto {
+            name: Some("WrongOneofOrder".into()),
+            field: vec![optional, real],
+            oneof_decl: vec![
+                OneofDescriptorProto {
+                    name: Some("_optional_value".into()),
+                    ..Default::default()
+                },
+                OneofDescriptorProto {
+                    name: Some("real_choice".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::RealOneofAfterSyntheticOneof { message, oneof }
+                    if message == "invalid.test.WrongOneofOrder"
+                        && oneof == "invalid.test.WrongOneofOrder.real_choice"
+            ));
+            assert_eq!(
+                err.to_string(),
+                "real oneof invalid.test.WrongOneofOrder.real_choice in message \
+                 invalid.test.WrongOneofOrder appears after a synthetic oneof"
+            );
+        },
+    );
+}
+
+#[test]
+fn proto3_optional_fields_require_optional_cardinality() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    for (file_name, message_name, label) in [
+        (
+            "proto3-optional-repeated.proto",
+            "RepeatedProto3Optional",
+            Label::LABEL_REPEATED,
+        ),
+        (
+            "proto3-optional-required.proto",
+            "RequiredProto3Optional",
+            Label::LABEL_REQUIRED,
+        ),
+    ] {
+        let mut field = scalar_field("value", 1, Type::TYPE_INT32);
+        field.label = Some(label);
+        field.proto3_optional = Some(true);
+        let expected_field = format!("invalid.test.{message_name}.value");
+
+        assert_rejected_without_mutating_pool(
+            file_name,
+            &format!("invalid.test.{message_name}"),
+            DescriptorProto {
+                name: Some(message_name.into()),
+                field: vec![field],
+                ..Default::default()
+            },
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidProto3OptionalCardinality { field }
+                        if field == &expected_field
+                ));
+                assert_eq!(
+                    err.to_string(),
+                    format!("field {expected_field} is marked proto3_optional but is not optional")
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn proto3_optional_fields_are_rejected_outside_proto3_files() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    // An unset `syntax` means proto2.
+    for (syntax, edition) in [
+        (Some("proto2"), None),
+        (None, None),
+        (Some("editions"), Some(Edition::EDITION_2023)),
+    ] {
+        let mut field = scalar_field("value", 1, Type::TYPE_INT32);
+        field.oneof_index = Some(0);
+        field.proto3_optional = Some(true);
+
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("not-proto3-optional.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: syntax.map(Into::into),
+                edition,
+                message_type: vec![DescriptorProto {
+                    name: Some("NotProto3Optional".into()),
+                    field: vec![field],
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("_value".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        assert_set_rejected_without_mutating_pool(
+            "not-proto3-optional.proto",
+            "invalid.test.NotProto3Optional",
+            set,
+            |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::Proto3OptionalOutsideProto3 { field }
+                            if field == "invalid.test.NotProto3Optional.value"
+                    ),
+                    "syntax {syntax:?}: {err}"
+                );
+                assert_eq!(
+                    err.to_string(),
+                    "field invalid.test.NotProto3Optional.value is marked proto3_optional \
+                     outside a proto3 file"
+                );
+            },
+        );
+    }
+}
+
+#[test]
 fn message_and_service_symbol_collisions_are_rejected_transactionally() {
     use buffa_descriptor::generated::descriptor::{
         DescriptorProto, FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,

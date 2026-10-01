@@ -775,6 +775,7 @@ fn generate_message_with_nesting(
     // Generate a manual Debug impl that excludes internal __buffa_ fields.
     // Fields marked `[debug_redact = true]` print DEBUG_REDACT_PLACEHOLDER
     // instead of their value, mirroring protobuf's DebugString redaction.
+    // Omitted when a `skip_debug` rule covers the message.
     let struct_name_str = name_ident.to_string();
     // Labels match what `#[derive(Debug)]` prints: raw-ident fields (`r#type`)
     // show as `type`, consistent with the view struct's Debug impl.
@@ -792,12 +793,16 @@ fn generate_message_with_nesting(
             }
         })
         .collect();
-    let debug_impl = quote! {
-        impl ::core::fmt::Debug for #name_ident {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                f.debug_struct(#struct_name_str)
-                    #(.field(#debug_field_names, #debug_field_values))*
-                    .finish()
+    let debug_impl = if ctx.skip_debug(proto_fqn) {
+        quote! {}
+    } else {
+        quote! {
+            impl ::core::fmt::Debug for #name_ident {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct(#struct_name_str)
+                        #(.field(#debug_field_names, #debug_field_values))*
+                        .finish()
+                }
             }
         }
     };

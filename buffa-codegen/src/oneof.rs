@@ -369,7 +369,7 @@ fn collect_variant_info(
                 .as_deref()
                 .ok_or(CodeGenError::MissingField("field.name"))?;
             let json_name = field.json_name.as_deref().unwrap_or(proto_name).to_string();
-            let variant_ident = oneof_variant_ident(proto_name);
+            let variant_ident = oneof_variant_ident(field);
             let field_type = crate::impl_message::effective_type(ctx, field, features);
             // bytes_fields config override: scalar_or_message_type_nested goes
             // through scalar_rust_type which hardcodes Vec<u8> for TYPE_BYTES.
@@ -984,13 +984,25 @@ pub(crate) fn resolve_oneof_idents(
 
 /// Build the Rust variant identifier for a oneof field.
 ///
-/// PascalCase the proto field name, then sanitize against reserved Rust
-/// idents — the only lowercase Rust keyword whose PascalCase form is also
-/// reserved is `self` → `Self`, which would otherwise produce
-/// `pub enum Foo { Self(...) }` and fail to parse. `make_field_ident`
-/// suffixes such names with `_` so the variant becomes `Self_`.
-pub(crate) fn oneof_variant_ident(proto_name: &str) -> proc_macro2::Ident {
-    crate::idents::make_field_ident(&to_pascal_case(proto_name))
+/// PascalCase the field's `(buffa.ext.field).name` option, or without one its
+/// proto name, then sanitize against reserved Rust idents — the only
+/// lowercase Rust keyword whose PascalCase form is also reserved is `self` →
+/// `Self`, which would otherwise produce `pub enum Foo { Self(...) }` and
+/// fail to parse. `make_field_ident` suffixes such names with `_` so the
+/// variant becomes `Self_`.
+///
+/// # Panics
+///
+/// Panics if the PascalCase form is not an identifier.
+/// [`name_override::validate_file`](crate::name_override::validate_file)
+/// rejects such an option value. A proto name such as `_1` still panics.
+pub(crate) fn oneof_variant_ident(field: &FieldDescriptorProto) -> proc_macro2::Ident {
+    let option = crate::name_override::field_name(field);
+    let name = option
+        .as_deref()
+        .or(field.name.as_deref())
+        .unwrap_or_default();
+    crate::idents::make_field_ident(&to_pascal_case(name))
 }
 
 /// Convert a snake_case identifier to PascalCase.

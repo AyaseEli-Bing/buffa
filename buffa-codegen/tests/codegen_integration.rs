@@ -612,14 +612,14 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
     // Only ONE From impl (for T, which appears once), not two for Placeholder.
     assert_eq!(
         content
-            .matches("impl From<super::super::super::Placeholder> for Kind")
+            .matches("impl ::core::convert::From<super::super::super::Placeholder> for Kind")
             .count(),
         0,
         "duplicate-type From impls must be skipped: {content}"
     );
     assert_eq!(
         content
-            .matches("impl From<super::super::super::T> for Kind")
+            .matches("impl ::core::convert::From<super::super::super::T> for Kind")
             .count(),
         1,
         "unique-type From impl must still be generated: {content}"
@@ -1725,7 +1725,7 @@ fn with_setters_emitted_for_explicit_presence_fields() {
 
     // String setter uses impl Into<...> for &str ergonomics.
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "string setter should use impl Into: {content}"
     );
 
@@ -1782,7 +1782,7 @@ fn with_setters_bytes_type_uses_into() {
         "with_data missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "bytes::Bytes setter should use impl Into: {content}"
     );
 }
@@ -1804,7 +1804,7 @@ fn with_setters_vec_u8_uses_into() {
         "with_data missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "Vec<u8> setter should use impl Into: {content}"
     );
 }
@@ -1827,7 +1827,7 @@ fn with_setters_enum_uses_into() {
         "with_color missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "enum setter should use impl Into: {content}"
     );
 }

@@ -749,6 +749,7 @@ pub mod ext_name {
 }
 
 /// `(buffa.ext.field).name` with the table codec. See tests/ext_name.rs.
+#[cfg(has_table_codec)]
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod ext_name_table {
     buffa::include_proto!("test.extname_table");

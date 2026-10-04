@@ -91,6 +91,7 @@ fn lazy_view_fields_follow_the_option() {
     assert_eq!(view.to_owned_message().unwrap(), sample());
 }
 
+#[cfg(has_table_codec)]
 #[test]
 fn table_codec_fields_follow_the_option() {
     use crate::ext_name_table::{Flat, Leaf};

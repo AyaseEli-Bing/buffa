@@ -181,6 +181,14 @@ fn main() {
         compile_both_codecs("the generated wide schema", &wide_proto(), "wide");
         compile_cross_package();
         compile_table_with_options("table_codec.proto", "tc");
+        // `(buffa.ext.field).name` with the table codec, whose tables refer
+        // to the struct fields by name.
+        buffa_build::Config::new()
+            .files(&["protos/ext_name_table.proto"])
+            .includes(&["protos/", "../buffa-proto-options/protos/"])
+            .codec_strategy(buffa_build::CodecStrategy::Table)
+            .compile()
+            .expect("buffa_build failed for ext_name_table.proto");
     }
 
     // Basic proto — the original test file. Also the codegen target for
@@ -1121,15 +1129,6 @@ fn main() {
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for ext_name.proto");
-
-    // The same option with the table codec, whose tables refer to the struct
-    // fields by name.
-    buffa_build::Config::new()
-        .files(&["protos/ext_name_table.proto"])
-        .includes(&["protos/", "../buffa-proto-options/protos/"])
-        .codec_strategy(buffa_build::CodecStrategy::Table)
-        .compile()
-        .expect("buffa_build failed for ext_name_table.proto");
 
     // Edition 2024 — requires protoc v30+ (stabilized edition 2024).
     // Older protoc rejects it with "later than the maximum supported edition".

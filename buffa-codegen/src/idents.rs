@@ -76,18 +76,17 @@ pub fn make_field_ident(name: &str) -> Ident {
     }
 }
 
-/// Returns the Rust name of a generated message or enum type, before
-/// raw-identifier escaping.
+/// Returns the Rust name of a generated message or enum type.
 ///
-/// The name of a primitive type that generated code uses, such as `bool`,
-/// `u32` or `str`, gets a trailing `_`. So does a keyword that cannot be a
-/// raw identifier (`Self`, `self`, `super`, `crate`), as in
-/// [`make_field_ident`]. A struct named `bool` would otherwise replace the
-/// primitive for every item in its module, including the code that derive
-/// macros expand there. Any other name is returned unchanged, and
-/// [`make_type_ident`] makes it a raw identifier when it is a keyword.
+/// A Rust keyword (`type`, `Self`) and the name of a primitive type that
+/// generated code uses (`bool`, `u32`, `str`) get a trailing `_`. A struct
+/// named `bool` would otherwise replace the primitive for every item in its
+/// module, including the code that derive macros expand there. A keyword is
+/// not made a raw identifier, as [`make_field_ident`] does for a field:
+/// `derive(Arbitrary)` builds an identifier from the type's name and panics
+/// on `r#type`. Any other name is returned unchanged.
 pub(crate) fn escape_type_name(name: &str) -> std::borrow::Cow<'_, str> {
-    if is_generated_primitive(name) || (is_rust_keyword(name) && !can_be_raw_ident(name)) {
+    if is_generated_primitive(name) || is_rust_keyword(name) {
         std::borrow::Cow::Owned(format!("{name}_"))
     } else {
         std::borrow::Cow::Borrowed(name)
@@ -100,14 +99,6 @@ pub(crate) fn escape_type_name(name: &str) -> std::borrow::Cow<'_, str> {
 /// joined. Prefix `Pb` and `bool` give `Pbbool`, with the suffix left off.
 pub(crate) fn local_type_name(type_name_prefix: &str, proto_name: &str) -> String {
     escape_type_name(&format!("{type_name_prefix}{proto_name}")).into_owned()
-}
-
-/// Create the identifier for a generated message or enum type, for its
-/// declaration and its impls. `rust_name` must come from
-/// [`escape_type_name`] or [`local_type_name`]: a keyword becomes `r#type`,
-/// and any other name is used as written.
-pub(crate) fn make_type_ident(rust_name: &str) -> Ident {
-    make_field_ident(rust_name)
 }
 
 /// Is `name` a primitive type that generated code names without a path?
@@ -344,13 +335,13 @@ mod tests {
         ] {
             assert_eq!(escape_type_name(name), format!("{name}_"), "{name}");
         }
-        for name in ["Self", "self", "super", "crate"] {
+        for name in ["Self", "self", "super", "crate", "type", "match", "async"] {
             assert_eq!(escape_type_name(name), format!("{name}_"), "{name}");
         }
-        // Case-sensitive, and raw-able keywords are left for the ident.
-        // Generated code does not name the last six, so they stay as written.
+        // Case-sensitive. Generated code does not name the last six, so they
+        // stay as written.
         for name in [
-            "Bool", "U32", "Str", "Crate", "type", "Foo", "char", "i8", "u16", "i128", "isize",
+            "Bool", "U32", "Str", "Crate", "Type", "Foo", "char", "i8", "u16", "i128", "isize",
             "f16",
         ] {
             assert_eq!(escape_type_name(name), name, "{name}");
@@ -360,15 +351,10 @@ mod tests {
     #[test]
     fn local_type_name_escapes_the_prefixed_name() {
         assert_eq!(local_type_name("", "bool"), "bool_");
+        assert_eq!(local_type_name("", "type"), "type_");
         assert_eq!(local_type_name("Pb", "bool"), "Pbbool");
+        assert_eq!(local_type_name("Pb", "type"), "Pbtype");
         assert_eq!(local_type_name("Pb", "Foo"), "PbFoo");
-    }
-
-    #[test]
-    fn type_ident_is_raw_for_keywords() {
-        assert_eq!(make_type_ident("type").to_string(), "r#type");
-        assert_eq!(make_type_ident("bool_").to_string(), "bool_");
-        assert_eq!(make_type_ident("Foo").to_string(), "Foo");
     }
 
     #[test]

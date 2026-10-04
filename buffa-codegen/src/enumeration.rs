@@ -17,9 +17,6 @@ use crate::CodeGenError;
 ///   `from_i32`), or null (→ `Default::default()`). Unknown values produce
 ///   a hard error — lenient handling happens at the field-level serde helpers.
 fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
-    // `stringify!` keeps the `r#` of a raw identifier, so the `expecting`
-    // text takes the name from a plain one.
-    let name_label = format_ident!("{}", name_ident.to_string().trim_start_matches("r#"));
     quote! {
         impl ::serde::Serialize for #name_ident {
             fn serialize<S: ::serde::Serializer>(&self, s: S) -> ::core::result::Result<S::Ok, S::Error> {
@@ -34,7 +31,7 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
                     type Value = #name_ident;
 
                     fn expecting(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                        f.write_str(concat!("a string, integer, or null for ", stringify!(#name_label)))
+                        f.write_str(concat!("a string, integer, or null for ", stringify!(#name_ident)))
                     }
 
                     fn visit_str<E: ::serde::de::Error>(self, v: &str) -> ::core::result::Result<#name_ident, E> {
@@ -106,7 +103,7 @@ pub fn generate_enum(
     features: &ResolvedFeatures,
     _resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
-    let name_ident = crate::idents::make_type_ident(rust_name);
+    let name_ident = format_ident!("{}", rust_name);
 
     // Track which discriminant values have been seen to identify aliases.
     // Proto spec: the first value with a given number is the primary; subsequent

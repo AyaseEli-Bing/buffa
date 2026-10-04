@@ -117,7 +117,7 @@ fn generate_message_with_nesting(
         features,
         nesting,
     } = scope;
-    let name_ident = crate::idents::make_type_ident(rust_name);
+    let name_ident = format_ident!("{}", rust_name);
 
     // MessageSet wire format: legacy Google encoding that wraps each extension
     // in a group at field 1. protoc enforces the "no regular fields" invariant
@@ -788,10 +788,9 @@ fn generate_message_with_nesting(
     // Fields marked `[debug_redact = true]` print DEBUG_REDACT_PLACEHOLDER
     // instead of their value, mirroring protobuf's DebugString redaction.
     // Omitted when a `skip_debug` rule covers the message.
-    // Labels match what `#[derive(Debug)]` prints: a raw-ident struct or
-    // field (`r#type`) shows as `type`, consistent with the view struct's
-    // Debug impl.
-    let struct_name_str = name_ident.to_string().trim_start_matches("r#").to_string();
+    let struct_name_str = name_ident.to_string();
+    // Labels match what `#[derive(Debug)]` prints: raw-ident fields (`r#type`)
+    // show as `type`, consistent with the view struct's Debug impl.
     let debug_field_names: Vec<String> = debug_fields
         .iter()
         .map(|(id, _)| id.to_string().trim_start_matches("r#").to_string())
@@ -1251,7 +1250,7 @@ fn generate_custom_deserialize(
 
     // Assemble the impl block. The non-snake allow covers the `__f_<name>` /
     // `__oneof_<name>` locals bound inside the visitor.
-    let expecting_msg = format!("struct {}", name_ident.to_string().trim_start_matches("r#"));
+    let expecting_msg = format!("struct {name_ident}");
     let non_snake_attr = ctx.message_non_snake_attr(msg);
 
     Ok(quote! {

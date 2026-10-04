@@ -458,13 +458,15 @@ fn main() {
 
     // Messages and enums named after primitive types, `Self` and a keyword.
     // JSON, text and setters are on because the serde derives and the
-    // generated text and setter code name the primitives.
+    // generated text and setter code name the primitives. `Arbitrary` is on
+    // because its derive rejects a type whose name is a raw identifier.
     buffa_build::Config::new()
         .files(&["protos/type_name_escapes.proto"])
         .includes(&["protos/"])
         .generate_json(true)
         .generate_text(true)
         .generate_with_setters(true)
+        .generate_arbitrary(true)
         .compile()
         .expect("buffa_build failed for type_name_escapes.proto");
 

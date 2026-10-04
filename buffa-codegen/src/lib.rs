@@ -2021,8 +2021,8 @@ impl CodeGenConfig {
     /// Returns the Rust name of a locally generated type:
     /// [`type_name_prefix`](Self::type_name_prefix), then the proto simple
     /// name, then the trailing `_` that [`idents::escape_type_name`] adds.
-    /// This is the name in the type map. A keyword name such as `type` is
-    /// returned without `r#`; [`idents::make_type_ident`] adds it.
+    /// This is the name the type is declared with and the name in the type
+    /// map.
     pub(crate) fn prefixed_type_name(&self, proto_name: &str) -> String {
         idents::local_type_name(&self.type_name_prefix, proto_name)
     }
@@ -5260,9 +5260,9 @@ pub enum CodeGenError {
     /// Two types, each a message or an enum, declared at package level in
     /// one package or nested in one message, produce the same Rust type
     /// name. With an empty [`CodeGenConfig::type_name_prefix`], a type named
-    /// after a primitive type that generated code uses (`bool`, `str`, `u8`,
-    /// `usize`, `i32`, `i64`, `u32`, `u64`, `f32`, `f64`), or named `Self`,
-    /// `self`, `super` or `crate`, is generated with a trailing `_`, so
+    /// after a Rust keyword (`type`, `Self`), or after a primitive type that
+    /// generated code uses (`bool`, `str`, `u8`, `usize`, `i32`, `i64`,
+    /// `u32`, `u64`, `f32`, `f64`), is generated with a trailing `_`, so
     /// `bool` and `bool_` both become `bool_`.
     ///
     /// Resolve by renaming one of the types, which changes its full name and

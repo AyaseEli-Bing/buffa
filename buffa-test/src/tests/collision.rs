@@ -227,11 +227,11 @@ fn test_escaped_type_names_round_trip_binary_and_json() {
             v: "me".into(),
             ..Default::default()
         }),
-        kind: MessageField::some(esc::r#type {
+        kind: MessageField::some(esc::type_ {
             v: "kind".into(),
             ..Default::default()
         }),
-        arm: EnumValue::Known(esc::r#match::MATCH_ONE),
+        arm: EnumValue::Known(esc::match_::MATCH_ONE),
         // `char` and `i8` are not escaped: generated code does not name them.
         letter: MessageField::some(esc::char {
             v: "c".into(),
@@ -266,7 +266,7 @@ fn test_escaped_type_names_keep_their_proto_names() {
 
     assert_eq!(esc::bool_::FULL_NAME, "test.type_name_escapes.bool");
     assert_eq!(esc::Self_::FULL_NAME, "test.type_name_escapes.Self");
-    assert_eq!(esc::r#type::FULL_NAME, "test.type_name_escapes.type");
+    assert_eq!(esc::type_::FULL_NAME, "test.type_name_escapes.type");
     assert_eq!(
         esc::bool::Inner::FULL_NAME,
         "test.type_name_escapes.bool.Inner"
@@ -275,6 +275,6 @@ fn test_escaped_type_names_keep_their_proto_names() {
         esc::bool_::TYPE_URL,
         "type.googleapis.com/test.type_name_escapes.bool"
     );
-    // `Debug` prints the Rust name as `#[derive(Debug)]` would: no `r#`.
-    assert!(format!("{:?}", esc::r#type::default()).starts_with("type {"));
+    // `Debug` prints the Rust name, as `#[derive(Debug)]` would.
+    assert!(format!("{:?}", esc::type_::default()).starts_with("type_ {"));
 }

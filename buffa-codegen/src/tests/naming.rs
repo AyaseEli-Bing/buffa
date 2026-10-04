@@ -1532,64 +1532,34 @@ fn test_primitive_type_names_get_a_trailing_underscore() {
 }
 
 #[test]
-fn test_path_keyword_type_names_get_a_trailing_underscore() {
-    // `Self`, `super` and `crate` cannot be raw identifiers.
+fn test_keyword_type_names_get_a_trailing_underscore() {
+    // Not a raw identifier (`r#type`): `derive(Arbitrary)` panics on one,
+    // and `Self`, `super` and `crate` cannot be one.
     let files = generate(
-        &[type_name_file(&["Self", "super"], &["crate"])],
-        &["type_names.proto".to_string()],
-        &CodeGenConfig::default(),
-    )
-    .expect("path-keyword-named types generate");
-    let content = joined(&files);
-    for decl in [
-        "pub struct Self_ {",
-        "pub struct super_ {",
-        "pub enum crate_ {",
-    ] {
-        assert!(content.contains(decl), "missing `{decl}`: {content}");
-    }
-}
-
-#[test]
-fn test_keyword_type_names_are_raw_identifiers() {
-    let files = generate(
-        &[type_name_file(&["type", "match"], &["async"])],
+        &[type_name_file(
+            &["Self", "super", "type", "match"],
+            &["crate", "async"],
+        )],
         &["type_names.proto".to_string()],
         &CodeGenConfig::default(),
     )
     .expect("keyword-named types generate");
     let content = joined(&files);
     for decl in [
-        "pub struct r#type {",
-        "pub struct r#match {",
-        "pub enum r#async {",
+        "pub struct Self_ {",
+        "pub struct super_ {",
+        "pub struct type_ {",
+        "pub struct match_ {",
+        "pub enum crate_ {",
+        "pub enum async_ {",
     ] {
         assert!(content.contains(decl), "missing `{decl}`: {content}");
     }
     assert!(
-        content.contains("pub f1: ::buffa::MessageField<r#type"),
+        content.contains("pub f3: ::buffa::MessageField<type_"),
         "{content}"
     );
-    // Text that names the type drops the `r#`, as `#[derive(Debug)]` does.
-    assert!(content.contains(r#"f.debug_struct("type")"#), "{content}");
-    assert!(!content.contains(r#""r#type""#), "{content}");
-}
-
-#[test]
-fn test_keyword_enum_name_in_json_expecting_text_has_no_raw_prefix() {
-    let config = CodeGenConfig {
-        generate_json: true,
-        ..Default::default()
-    };
-    let files = generate(
-        &[type_name_file(&[], &["async"])],
-        &["type_names.proto".to_string()],
-        &config,
-    )
-    .expect("keyword-named enum generates with JSON");
-    let content = joined(&files);
-    assert!(content.contains("stringify!(async)"), "{content}");
-    assert!(!content.contains("stringify!(r#async)"), "{content}");
+    assert!(!content.contains("r#type"), "{content}");
 }
 
 #[test]

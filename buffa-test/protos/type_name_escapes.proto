@@ -2,8 +2,9 @@ syntax = "proto3";
 
 package test.type_name_escapes;
 
-// Messages and enums named after Rust primitive types, `Self` and keywords.
-// `bool` and `u64` also have a nested message, and `bool` and `i32` a oneof.
+// Messages and enums named after Rust primitive types and keywords.
+// `bool`, `u64` and `type` also have a nested message, and `bool`, `i32` and
+// `type` a oneof.
 // `char` and `i8` are primitive names that generated code does not use, so
 // they keep their spelling. `Holder` refers to each type and has a scalar
 // field for each primitive that an unescaped name would shadow. Compilation
@@ -63,7 +64,15 @@ message Self {
 }
 
 message type {
+  message Inner {
+    int32 n = 1;
+  }
   string v = 1;
+  Inner inner = 2;
+  oneof pick {
+    string name = 3;
+    int32 number = 4;
+  }
 }
 
 enum match {
@@ -94,6 +103,7 @@ message Holder {
   optional .test.type_name_escapes.u32 maybe_unsigned = 11;
   .test.type_name_escapes.Self me = 12;
   .test.type_name_escapes.type kind = 13;
+  .test.type_name_escapes.type.Inner kind_inner = 32;
   .test.type_name_escapes.match arm = 14;
   .test.type_name_escapes.char letter = 15;
   .test.type_name_escapes.i8 tiny = 16;

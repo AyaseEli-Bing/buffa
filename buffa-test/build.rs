@@ -456,10 +456,11 @@ fn main() {
         .compile()
         .expect("buffa_build failed for prelude_shadow.proto");
 
-    // Messages and enums named after primitive types, `Self` and a keyword.
-    // JSON, text and setters are on because the serde derives and the
-    // generated text and setter code name the primitives. `Arbitrary` is on
-    // because its derive rejects a type whose name is a raw identifier.
+    // Messages and enums named after primitive types and keywords. JSON,
+    // text and setters are on because the serde derives and the generated
+    // text and setter code name the primitives. `Arbitrary` is on so that
+    // the build fails if a keyword-named type is declared as a raw
+    // identifier, which its derive panics on.
     buffa_build::Config::new()
         .files(&["protos/type_name_escapes.proto"])
         .includes(&["protos/"])

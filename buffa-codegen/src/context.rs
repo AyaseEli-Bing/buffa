@@ -2623,6 +2623,10 @@ mod tests {
             Some("::other::v1::bool_".into())
         );
         assert_eq!(
+            resolve_extern_type(".other.v1.type", &prefix),
+            Some("::other::v1::type_".into())
+        );
+        assert_eq!(
             resolve_extern_type(".other.v1.Outer.Self", &prefix),
             Some("::other::v1::outer::Self_".into())
         );

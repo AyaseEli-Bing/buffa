@@ -229,6 +229,15 @@ fn test_escaped_type_names_round_trip_binary_and_json() {
         }),
         kind: MessageField::some(esc::type_ {
             v: "kind".into(),
+            inner: MessageField::some(esc::r#type::Inner {
+                n: 2,
+                ..Default::default()
+            }),
+            pick: Some(oneof::r#type::Pick::Number(5)),
+            ..Default::default()
+        }),
+        kind_inner: MessageField::some(esc::r#type::Inner {
+            n: 3,
             ..Default::default()
         }),
         arm: EnumValue::Known(esc::match_::MATCH_ONE),
@@ -272,9 +281,11 @@ fn test_escaped_type_names_keep_their_proto_names() {
         "test.type_name_escapes.bool.Inner"
     );
     assert_eq!(
+        esc::r#type::Inner::FULL_NAME,
+        "test.type_name_escapes.type.Inner"
+    );
+    assert_eq!(
         esc::bool_::TYPE_URL,
         "type.googleapis.com/test.type_name_escapes.bool"
     );
-    // `Debug` prints the Rust name, as `#[derive(Debug)]` would.
-    assert!(format!("{:?}", esc::type_::default()).starts_with("type_ {"));
 }

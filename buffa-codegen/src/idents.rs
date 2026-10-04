@@ -81,10 +81,11 @@ pub fn make_field_ident(name: &str) -> Ident {
 /// A Rust keyword (`type`, `Self`) and the name of a primitive type that
 /// generated code uses (`bool`, `u32`, `str`) get a trailing `_`. A struct
 /// named `bool` would otherwise replace the primitive for every item in its
-/// module, including the code that derive macros expand there. A keyword is
-/// not made a raw identifier, as [`make_field_ident`] does for a field:
-/// `derive(Arbitrary)` builds an identifier from the type's name and panics
-/// on `r#type`. Any other name is returned unchanged.
+/// module, including the code that derive macros expand there. Unlike a
+/// field name, which [`make_field_ident`] makes a raw identifier, a keyword
+/// gets the suffix: a derive macro that builds an identifier from the
+/// type's name, as `derive(Arbitrary)` does, panics on `r#type`. Any other
+/// name is returned unchanged.
 pub(crate) fn escape_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     if is_generated_primitive(name) || is_rust_keyword(name) {
         std::borrow::Cow::Owned(format!("{name}_"))

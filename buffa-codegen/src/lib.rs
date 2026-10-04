@@ -2020,7 +2020,7 @@ impl CodeGenConfig {
 
     /// Returns the Rust name of a locally generated type:
     /// [`type_name_prefix`](Self::type_name_prefix), then the proto simple
-    /// name, then the trailing `_` that [`idents::escape_type_name`] adds.
+    /// name, with [`idents::escape_type_name`] applied to the two joined.
     /// This is the name the type is declared with and the name in the type
     /// map.
     pub(crate) fn prefixed_type_name(&self, proto_name: &str) -> String {

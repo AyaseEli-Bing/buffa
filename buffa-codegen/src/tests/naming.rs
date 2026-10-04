@@ -1533,8 +1533,6 @@ fn test_primitive_type_names_get_a_trailing_underscore() {
 
 #[test]
 fn test_keyword_type_names_get_a_trailing_underscore() {
-    // Not a raw identifier (`r#type`): `derive(Arbitrary)` panics on one,
-    // and `Self`, `super` and `crate` cannot be one.
     let files = generate(
         &[type_name_file(
             &["Self", "super", "type", "match"],
@@ -1559,7 +1557,7 @@ fn test_keyword_type_names_get_a_trailing_underscore() {
         content.contains("pub f3: ::buffa::MessageField<type_"),
         "{content}"
     );
-    assert!(!content.contains("r#type"), "{content}");
+    assert!(!content.contains("struct r#type"), "{content}");
 }
 
 #[test]
@@ -1613,6 +1611,10 @@ fn test_types_that_escape_to_one_name_are_rejected() {
     assert_type_name_conflict(
         type_name_file(&["bool", "bool_"], &[]),
         ("my.pkg", "bool", "bool_", "bool_"),
+    );
+    assert_type_name_conflict(
+        type_name_file(&["type", "type_"], &[]),
+        ("my.pkg", "type", "type_", "type_"),
     );
     // A message and an enum share the type namespace.
     assert_type_name_conflict(

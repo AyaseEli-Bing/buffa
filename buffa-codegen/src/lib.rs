@@ -2023,11 +2023,13 @@ impl CodeGenConfig {
         self.feature_gates().reflect
     }
 
-    /// Apply [`type_name_prefix`](Self::type_name_prefix) to a locally
-    /// generated type's proto simple name, yielding the Rust identifier to
-    /// declare (and register in the type map).
+    /// Returns the Rust name of a locally generated type:
+    /// [`type_name_prefix`](Self::type_name_prefix), then the proto simple
+    /// name, then the trailing `_` that [`idents::escape_type_name`] adds.
+    /// This is the name in the type map. A keyword name such as `type` is
+    /// returned without `r#`; [`idents::make_type_ident`] adds it.
     pub(crate) fn prefixed_type_name(&self, proto_name: &str) -> String {
-        format!("{}{proto_name}", self.type_name_prefix)
+        idents::local_type_name(&self.type_name_prefix, proto_name)
     }
 
     /// Validate [`type_name_prefix`](Self::type_name_prefix): empty (no
@@ -3221,6 +3223,7 @@ fn warn_excluded_refs_msg(
 ///   corpus or different rules than this call uses.
 /// - For a valid schema whose names collide in the generated Rust:
 ///   [`CodeGenError::OneofEnumNameConflict`],
+///   [`CodeGenError::TypeNameConflict`],
 ///   [`CodeGenError::ModuleNameConflict`],
 ///   [`CodeGenError::ReservedFieldName`] or
 ///   [`CodeGenError::ReservedModuleName`].
@@ -4051,6 +4054,28 @@ fn validate_shared_root_name(
     Ok(())
 }
 
+/// Rejects two sibling types that [`idents::local_type_name`] maps to one
+/// Rust name. An empty name is skipped; [`required_type_name`] reports it.
+fn check_type_names<'a>(
+    scope: &str,
+    names: impl Iterator<Item = &'a str>,
+    type_name_prefix: &str,
+) -> Result<(), CodeGenError> {
+    let mut seen: std::collections::HashMap<String, &str> = std::collections::HashMap::new();
+    for name in names.filter(|name| !name.is_empty()) {
+        let rust_name = idents::local_type_name(type_name_prefix, name);
+        if let Some(first) = seen.insert(rust_name.clone(), name) {
+            return Err(CodeGenError::TypeNameConflict {
+                scope: scope.to_string(),
+                first_type: first.to_string(),
+                second_type: name.to_string(),
+                rust_name,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Validate one input descriptor before generating code for it.
 ///
 /// Checks, in one walk of the message tree:
@@ -4061,13 +4086,16 @@ fn validate_shared_root_name(
 ///   with generated `__buffa_unknown_fields` / `__buffa_cached_size`).
 /// - **Module-name conflicts**: no two sibling messages snake_case to the
 ///   same module name (e.g. `HTTPRequest` vs `HttpRequest`).
+/// - **Type-name conflicts**: no two messages or enums nested in one message
+///   escape to the same Rust type name (e.g. `bool` vs `bool_`). The caller
+///   checks the package-level types, which span files.
 /// - **Reserved sentinel**: no package segment, message-module name, or
 ///   file-level enum name equals [`SENTINEL_MOD`](context::SENTINEL_MOD).
 ///   Ancillary types live under `pkg::__buffa::…`; a proto element
 ///   emitting an item named `__buffa` at package root would produce
 ///   E0428 against `pub mod __buffa`. This is the only name buffa
 ///   reserves in user namespace.
-fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
+fn validate_file(file: &FileDescriptorProto, type_name_prefix: &str) -> Result<(), CodeGenError> {
     use std::collections::HashMap;
 
     let sentinel = context::SENTINEL_MOD;
@@ -4097,6 +4125,7 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
         messages: &[crate::generated::descriptor::DescriptorProto],
         scope: &str,
         sentinel: &str,
+        type_name_prefix: &str,
     ) -> Result<(), CodeGenError> {
         // snake_case module name → original proto name (for conflict diag).
         let mut seen: HashMap<String, &str> = HashMap::new();
@@ -4112,6 +4141,14 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
             for enum_type in &msg.enum_type {
                 required_type_name(enum_type.name.as_deref(), "enum.name")?;
             }
+            check_type_names(
+                &fqn,
+                msg.nested_type
+                    .iter()
+                    .filter_map(|m| m.name.as_deref())
+                    .chain(msg.enum_type.iter().filter_map(|e| e.name.as_deref())),
+                type_name_prefix,
+            )?;
 
             for field in &msg.field {
                 let fname = field
@@ -4144,12 +4181,12 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
             }
             seen.insert(module_name, name);
 
-            walk(&msg.nested_type, &fqn, sentinel)?;
+            walk(&msg.nested_type, &fqn, sentinel, type_name_prefix)?;
         }
         Ok(())
     }
 
-    walk(&file.message_type, package, sentinel)
+    walk(&file.message_type, package, sentinel, type_name_prefix)
 }
 
 /// Returns the name of a message or enum descriptor, or
@@ -4194,7 +4231,7 @@ fn generate_proto_content(
     use crate::idents::make_field_ident;
     use crate::message::MessageOutput;
 
-    validate_file(file)?;
+    validate_file(file, &ctx.config.type_name_prefix)?;
     name_override::validate_file(ctx, file)?;
 
     let resolver = imports::ImportResolver::new();
@@ -4440,6 +4477,18 @@ fn generate_package(
     // single `super::` prefix when emitted into the fn body.
     let mut reg = message::RegistryPaths::default();
     let mut root_reexports: Vec<message::ReexportCandidate> = Vec::new();
+
+    // Package-level types share one module whichever file declares them.
+    check_type_names(
+        current_package,
+        files.iter().flat_map(|file| {
+            file.message_type
+                .iter()
+                .filter_map(|m| m.name.as_deref())
+                .chain(file.enum_type.iter().filter_map(|e| e.name.as_deref()))
+        }),
+        &ctx.config.type_name_prefix,
+    )?;
 
     // Idiomatic imports: dry-run the package's generation once with the
     // registry collecting, so the set of package-root path references is
@@ -5220,6 +5269,34 @@ pub enum CodeGenError {
         /// Proto name of the oneof declared second.
         second_oneof: String,
         /// The Rust enum name that both oneofs map to.
+        rust_name: String,
+    },
+    /// Two types, each a message or an enum, declared at package level in
+    /// one package or nested in one message, produce the same Rust type
+    /// name. With an empty [`CodeGenConfig::type_name_prefix`], a type named
+    /// after a primitive type that generated code uses (`bool`, `str`, `u8`,
+    /// `usize`, `i32`, `i64`, `u32`, `u64`, `f32`, `f64`), or named `Self`,
+    /// `self`, `super` or `crate`, is generated with a trailing `_`, so
+    /// `bool` and `bool_` both become `bool_`.
+    ///
+    /// Resolve by renaming one of the types, which changes its full name and
+    /// its `Any` type URL, or by setting a prefix: with prefix `Pb` the two
+    /// types are `Pbbool` and `Pbbool_`.
+    #[error(
+        "type name conflict in '{scope}': '{first_type}' and '{second_type}' \
+         both map to Rust type '{rust_name}'; rename one of them"
+    )]
+    TypeNameConflict {
+        /// Fully-qualified proto name of the package or message that
+        /// declares both types, without a leading dot. Empty for a
+        /// package-level conflict in a file that declares no package.
+        scope: String,
+        /// Proto simple name of the type visited first: within each file,
+        /// messages in declaration order, then enums.
+        first_type: String,
+        /// Proto simple name of the type visited second.
+        second_type: String,
+        /// The Rust type name that both map to.
         rust_name: String,
     },
     /// A proto package segment, message name, or file-level enum name

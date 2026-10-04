@@ -117,7 +117,7 @@ fn generate_message_with_nesting(
         features,
         nesting,
     } = scope;
-    let name_ident = format_ident!("{}", rust_name);
+    let name_ident = crate::idents::make_type_ident(rust_name);
 
     // MessageSet wire format: legacy Google encoding that wraps each extension
     // in a group at field 1. protoc enforces the "no regular fields" invariant
@@ -474,7 +474,12 @@ fn generate_message_with_nesting(
     )?;
 
     let type_url = format!("type.googleapis.com/{proto_fqn}");
-    let upper = crate::oneof::to_snake_case(rust_name).to_uppercase();
+    // From the name before `escape_type_name`: the suffix would give `bool`
+    // (`bool_`) and `Bool_` one constant name, and two siblings that
+    // snake_case alike are already rejected as a module conflict.
+    let upper =
+        crate::oneof::to_snake_case(&format!("{}{proto_name}", ctx.config.type_name_prefix))
+            .to_uppercase();
 
     // JSON Any entry — one per message with `generate_json`. Always
     // `is_wkt: false`: WKTs live in buffa-types and register themselves via
@@ -783,9 +788,10 @@ fn generate_message_with_nesting(
     // Fields marked `[debug_redact = true]` print DEBUG_REDACT_PLACEHOLDER
     // instead of their value, mirroring protobuf's DebugString redaction.
     // Omitted when a `skip_debug` rule covers the message.
-    let struct_name_str = name_ident.to_string();
-    // Labels match what `#[derive(Debug)]` prints: raw-ident fields (`r#type`)
-    // show as `type`, consistent with the view struct's Debug impl.
+    // Labels match what `#[derive(Debug)]` prints: a raw-ident struct or
+    // field (`r#type`) shows as `type`, consistent with the view struct's
+    // Debug impl.
+    let struct_name_str = name_ident.to_string().trim_start_matches("r#").to_string();
     let debug_field_names: Vec<String> = debug_fields
         .iter()
         .map(|(id, _)| id.to_string().trim_start_matches("r#").to_string())
@@ -1245,7 +1251,7 @@ fn generate_custom_deserialize(
 
     // Assemble the impl block. The non-snake allow covers the `__f_<name>` /
     // `__oneof_<name>` locals bound inside the visitor.
-    let expecting_msg = format!("struct {name_ident}");
+    let expecting_msg = format!("struct {}", name_ident.to_string().trim_start_matches("r#"));
     let non_snake_attr = ctx.message_non_snake_attr(msg);
 
     Ok(quote! {

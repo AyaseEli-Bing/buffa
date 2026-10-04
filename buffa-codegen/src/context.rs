@@ -1591,7 +1591,8 @@ pub(crate) fn resolve_extern_prefix(
 ///    e.g. `.google.protobuf.Timestamp = ::pbjson_types::Timestamp`).
 /// 2. Otherwise the **longest dotted-prefix** entry (a package or an enclosing
 ///    type) applies, with the proto segments past that prefix rendered as
-///    `snake_case` modules and the final segment kept as the Rust type name —
+///    `snake_case` modules and the final segment as the Rust type name, escaped
+///    by [`escape_type_name`](crate::idents::escape_type_name) —
 ///    exactly the path [`CodeGenContext::new`] would otherwise build from
 ///    [`resolve_extern_prefix`] plus the type name, so package-prefix mappings
 ///    resolve identically to before.
@@ -1629,7 +1630,8 @@ pub(crate) fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) 
             .unwrap_or("")
     };
     let mut segments = rest.split('.').collect::<Vec<_>>();
-    // The final segment is the type name (kept verbatim); the rest are modules.
+    // The final segment is the type name, escaped by the rule the owning
+    // crate's codegen applied; the rest are modules.
     let type_name = segments.pop()?;
     let mut path = rust_prefix.to_string();
     for module in segments {
@@ -1637,7 +1639,7 @@ pub(crate) fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) 
         path.push_str(&to_snake_case(module));
     }
     path.push_str("::");
-    path.push_str(type_name);
+    path.push_str(&crate::idents::escape_type_name(type_name));
     Some(path)
 }
 
@@ -1688,7 +1690,10 @@ fn resolve_type_path(
         (path, true)
     } else {
         (
-            join_mod(local_module, &format!("{type_name_prefix}{name}")),
+            join_mod(
+                local_module,
+                &crate::idents::local_type_name(type_name_prefix, name),
+            ),
             false,
         )
     }
@@ -1743,7 +1748,10 @@ fn register_nested_types(
                     (rust.clone(), child)
                 }
                 None => (
-                    format!("{parent_mod}::{type_name_prefix}{name}"),
+                    format!(
+                        "{parent_mod}::{}",
+                        crate::idents::local_type_name(type_name_prefix, name)
+                    ),
                     format!("{parent_mod}::{}", to_snake_case(name)),
                 ),
             };
@@ -1762,7 +1770,12 @@ fn register_nested_types(
                 .iter()
                 .find(|(proto, _)| proto == &fqn)
                 .map(|(_, rust)| rust.clone())
-                .unwrap_or_else(|| format!("{parent_mod}::{type_name_prefix}{name}"));
+                .unwrap_or_else(|| {
+                    format!(
+                        "{parent_mod}::{}",
+                        crate::idents::local_type_name(type_name_prefix, name)
+                    )
+                });
             type_map.insert(fqn.clone(), rust_path);
             package_of.insert(fqn, package.to_string());
         }
@@ -2623,6 +2636,28 @@ mod tests {
             )],
         );
         assert_eq!(result, Some("::pbjson_types::Timestamp".into()));
+    }
+
+    #[test]
+    fn test_resolve_extern_type_escapes_a_prefix_mapped_type_name() {
+        // The crate that owns the package declares `bool` as `bool_`.
+        let prefix = [(".other.v1".to_string(), "::other::v1".to_string())];
+        assert_eq!(
+            resolve_extern_type(".other.v1.bool", &prefix),
+            Some("::other::v1::bool_".into())
+        );
+        assert_eq!(
+            resolve_extern_type(".other.v1.Outer.Self", &prefix),
+            Some("::other::v1::outer::Self_".into())
+        );
+        // An exact entry is the caller's own path, used as written.
+        assert_eq!(
+            resolve_extern_type(
+                ".other.v1.bool",
+                &[(".other.v1.bool".into(), "::other::Flag".into())]
+            ),
+            Some("::other::Flag".into())
+        );
     }
 
     #[test]

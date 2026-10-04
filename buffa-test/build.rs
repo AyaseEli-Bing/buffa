@@ -1142,6 +1142,23 @@ fn main() {
         .compile()
         .expect("buffa_build failed for ext_name.proto");
 
+    // `(buffa.ext.message).name` and `(buffa.ext.enum).name`: structs and
+    // enums with Rust names set in the schema. A second package imports
+    // them, so its references resolve only through the options' names.
+    buffa_build::Config::new()
+        .files(&[
+            "protos/ext_type_name.proto",
+            "protos/ext_type_name_user.proto",
+        ])
+        .includes(&["protos/", "../buffa-proto-options/protos/"])
+        .generate_views(true)
+        .lazy_views(true)
+        .generate_json(true)
+        .generate_text(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for ext_type_name.proto");
+
     // Edition 2024 — requires protoc v30+ (stabilized edition 2024).
     // Older protoc rejects it with "later than the maximum supported edition".
     // Skip gracefully on older protoc so the crate still builds; tests are

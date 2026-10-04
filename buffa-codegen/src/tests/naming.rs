@@ -1675,7 +1675,7 @@ fn test_type_name_conflict_message_names_both_types_and_the_remedy() {
     assert_eq!(
         err.to_string(),
         "type name conflict in 'my.pkg': 'bool' and 'bool_' both map to Rust type 'bool_'; \
-         rename one of them"
+         rename one of them, or set its `(buffa.ext.message).name` or `(buffa.ext.enum).name`"
     );
 }
 

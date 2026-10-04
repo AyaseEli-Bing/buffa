@@ -99,7 +99,8 @@ pub(crate) fn escape_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// Returns the Rust name of a locally generated message or enum type:
+/// Returns the Rust name that buffa derives for a locally generated message
+/// or enum type without a `name` option:
 /// [`CodeGenConfig::type_name_prefix`](crate::CodeGenConfig::type_name_prefix),
 /// then the proto simple name, with [`escape_type_name`] applied to the two
 /// joined. Prefix `Pb` and `bool` give `Pbbool`, with the suffix left off.
@@ -109,8 +110,9 @@ pub(crate) fn local_type_name(type_name_prefix: &str, proto_name: &str) -> Strin
 
 /// Create the identifier for a generated message or enum type, for its
 /// declaration and its impls. `rust_name` must come from
-/// [`escape_type_name`] or [`local_type_name`]: a keyword becomes `r#type`,
-/// and any other name is used as written.
+/// [`escape_type_name`], [`local_type_name`], or a `name` option that
+/// [`name_override`](crate::name_override) accepted: a keyword becomes
+/// `r#type`, and any other name is used as written.
 pub(crate) fn make_type_ident(rust_name: &str) -> Ident {
     make_field_ident(rust_name)
 }
@@ -121,7 +123,7 @@ pub(crate) fn make_type_ident(rust_name: &str) -> Ident {
 /// The other primitive type names (`char`, `i8`, `u16`) are left out:
 /// generated code does not name them, so a message with one of those names
 /// compiles as written.
-fn is_generated_primitive(name: &str) -> bool {
+pub(crate) fn is_generated_primitive(name: &str) -> bool {
     matches!(
         name,
         "bool" | "str" | "u8" | "usize" | "i32" | "i64" | "u32" | "u64" | "f32" | "f64"

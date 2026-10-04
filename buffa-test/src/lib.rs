@@ -758,6 +758,17 @@ pub mod ext_name {
     buffa::include_proto!("test.extname");
 }
 
+/// `(buffa.ext.message).name` and `(buffa.ext.enum).name` fixture: structs
+/// and enums with Rust names set by the options, and a sub-package that
+/// imports them. See tests/ext_type_name.rs.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod ext_type_name {
+    buffa::include_proto!("test.exttypename");
+    pub mod user {
+        buffa::include_proto!("test.exttypename.user");
+    }
+}
+
 /// `(buffa.ext.field).name` with the table codec. See tests/ext_name.rs.
 #[cfg(has_table_codec)]
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]

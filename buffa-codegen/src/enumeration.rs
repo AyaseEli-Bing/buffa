@@ -95,9 +95,8 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
 
 /// Generate Rust code for a protobuf enum type.
 ///
-/// `rust_name` is the Rust identifier to use.  For top-level enums this is
-/// the proto enum name; for nested enums it is the parent-prefixed flat name
-/// (e.g. `TestAllTypesProto3NestedEnum`) matching the type-map convention.
+/// `rust_name` is the Rust identifier to use, from
+/// [`CodeGenContext::enum_rust_name`].
 pub fn generate_enum(
     ctx: &CodeGenContext,
     enum_desc: &EnumDescriptorProto,

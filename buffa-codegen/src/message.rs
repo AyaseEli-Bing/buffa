@@ -76,9 +76,9 @@ pub(crate) struct MessageOutput {
 /// Types belonging to this package are referenced without the module prefix
 /// since the generated code will be wrapped in `pub mod pkg { ... }`.
 ///
-/// `rust_name` is the Rust struct name to emit.  For top-level messages this
-/// is the proto message name; for nested messages it is the simple proto name
-/// (e.g. `Inner`) since module nesting provides scoping.
+/// `rust_name` is the Rust struct name to emit, from
+/// [`CodeGenContext::message_rust_name`]. A nested message has an unqualified
+/// name (e.g. `Inner`), since module nesting provides scoping.
 ///
 /// `proto_fqn` is the fully-qualified proto type name without a leading dot
 /// (e.g. `google.protobuf.Timestamp`, `my.package.Outer.Inner`).  It is used
@@ -134,15 +134,15 @@ fn generate_message_with_nesting(
         });
     }
 
-    // Nested enums — prefixed simple name, emitted inside the message's
-    // module.
+    // Nested enums — named by `enum_rust_name`, emitted inside the
+    // message's module.
     let nested_enums = msg
         .enum_type
         .iter()
         .map(|e| {
             let enum_name = e.name.as_deref().unwrap_or("");
             let enum_fqn = format!("{}.{}", proto_fqn, enum_name);
-            let enum_rust_name = ctx.config.prefixed_type_name(enum_name);
+            let enum_rust_name = ctx.enum_rust_name(e);
             crate::enumeration::generate_enum(
                 ctx,
                 e,
@@ -154,8 +154,8 @@ fn generate_message_with_nesting(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Nested messages (skip map entry synthetics) — simple name, emitted
-    // inside the message's module.
+    // Nested messages (skip map entry synthetics) — named by
+    // `message_rust_name`, emitted inside the message's module.
     //
     let nested_msgs = msg
         .nested_type
@@ -170,7 +170,7 @@ fn generate_message_with_nesting(
         .map(|nested| {
             let nested_proto_name = nested.name.as_deref().unwrap_or("");
             let nested_fqn = format!("{}.{}", proto_fqn, nested_proto_name);
-            let nested_rust_name = ctx.config.prefixed_type_name(nested_proto_name);
+            let nested_rust_name = ctx.message_rust_name(nested);
             let msg_features = crate::features::message_scope_features(features, nested, false);
             generate_message_with_nesting(
                 scope.nested(&nested_fqn, &msg_features),
@@ -952,20 +952,17 @@ fn collect_natural_reexports(
     let mut occupied: BTreeSet<String> = BTreeSet::new();
     for nested in non_map_nested {
         let name = nested.name.as_deref().unwrap_or("");
-        // Both the nested struct (`Bar`, declared with the configured
-        // prefix) and its sub-module (`bar`, proto-derived) reserve a
+        // Both the nested struct (`Bar`, named by `message_rust_name`)
+        // and its sub-module (`bar`, proto-derived) reserve a
         // type-namespace slot. The sub-module name only matters when it
         // happens to be PascalCase (e.g. proto `message X` → `pub mod x`
         // is benign, but proto `message FooView` → `pub mod foo_view` is
         // also benign). We track both for safety with no real cost.
-        occupied.insert(ctx.config.prefixed_type_name(name));
+        occupied.insert(ctx.message_rust_name(nested));
         occupied.insert(crate::oneof::to_snake_case(name));
     }
     for e in &msg.enum_type {
-        occupied.insert(
-            ctx.config
-                .prefixed_type_name(e.name.as_deref().unwrap_or("")),
-        );
+        occupied.insert(ctx.enum_rust_name(e));
     }
     for ext in &msg.extension {
         occupied.insert(
@@ -1023,9 +1020,7 @@ fn collect_natural_reexports(
         // Nested-message views: `__buffa::view::<msg>::BarView` → `BarView`.
         // The owned-view wrapper rides along: `BarOwnedView` → `BarOwnedView`.
         for nested in non_map_nested {
-            let nested_rust_name = ctx
-                .config
-                .prefixed_type_name(nested.name.as_deref().unwrap_or(""));
+            let nested_rust_name = ctx.message_rust_name(nested);
             let view_ident = format_ident!("{nested_rust_name}View");
             candidates.push(ReexportCandidate {
                 name: view_ident.to_string(),

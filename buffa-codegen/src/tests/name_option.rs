@@ -228,24 +228,26 @@ fn option_applies_to_one_message_only() {
 }
 
 #[test]
-fn option_names_a_oneof_variant_in_pascal_case() {
+fn option_names_a_oneof_variant_as_written() {
     let msg = with_oneof(
         message(
             "Msg",
             vec![
-                named(oneof_member("text", 1), "plain_text"),
-                named(oneof_member("raw", 2), "Binary"),
-                oneof_member("other", 3),
+                named(oneof_member("text", 1), "PlainText"),
+                named(oneof_member("raw", 2), "raw_bytes"),
+                named(oneof_member("url", 3), "HTTP_URL"),
+                oneof_member("other", 4),
             ],
         ),
         "body",
     );
     let code = generate_one(file_of(vec![msg]), &CodeGenConfig::default()).unwrap();
-    for variant in ["PlainText", "Binary", "Other"] {
+    for variant in ["PlainText", "raw_bytes", "HTTP_URL", "Other"] {
         assert!(has_variant(&code, variant), "{variant}: {code}");
     }
-    // The variants that the proto names would give.
-    for variant in ["Text", "Raw"] {
+    // The variants that the proto names would give, and the PascalCase
+    // forms of the values.
+    for variant in ["Text", "Raw", "Url", "RawBytes", "HTTPURL"] {
         assert!(!has_variant(&code, variant), "{variant}: {code}");
     }
 }
@@ -257,29 +259,30 @@ fn option_names_a_variant_under_idiomatic_field_names() {
     let msg = with_oneof(
         message(
             "Msg",
-            vec![named(oneof_member("textValue", 1), "plain_text")],
+            vec![named(oneof_member("textValue", 1), "PlainText")],
         ),
         "bodyKind",
     );
     let code = generate_one(file_of(vec![msg]), &idiomatic()).unwrap();
     assert!(has_variant(&code, "PlainText"), "{code}");
+    assert!(!has_variant(&code, "TextValue"), "{code}");
     assert!(code.contains("pub body_kind:"), "{code}");
 }
 
 #[test]
 fn option_on_a_proto3_optional_field_names_the_struct_field() {
     // A proto3 `optional` field is the one member of a synthetic oneof. It
-    // is a struct field, so a value with no PascalCase form is accepted, and
-    // the synthetic oneof takes no name in the struct.
+    // is a struct field, and the synthetic oneof takes no name in the
+    // struct, so another field can have the oneof's name `_f`.
     let field = FieldDescriptorProto {
         proto3_optional: Some(true),
-        ..named(oneof_member("f", 1), "_1")
+        ..named(oneof_member("f", 1), "count")
     };
     let other = named(string_field("g", 2), "_f");
     let mut file = file_of(vec![with_oneof(message("Msg", vec![field, other]), "_f")]);
     file.syntax = Some("proto3".to_string());
     let code = generate_one(file, &CodeGenConfig::default()).unwrap();
-    assert!(code.contains("pub _1:"), "{code}");
+    assert!(code.contains("pub count:"), "{code}");
     assert!(code.contains("pub _f:"), "{code}");
 }
 
@@ -297,6 +300,17 @@ fn value_that_is_not_an_identifier_is_rejected() {
             &NameOptionProblem::NotAnIdentifier,
         );
     }
+    // The rule is the same for a field in a oneof.
+    let msg = with_oneof(
+        message("Msg", vec![named(oneof_member("f", 1), "plain-text")]),
+        "body",
+    );
+    assert_invalid(
+        file_of(vec![msg]),
+        "pkg.Msg.f",
+        "plain-text",
+        &NameOptionProblem::NotAnIdentifier,
+    );
 }
 
 #[test]
@@ -308,18 +322,19 @@ fn keyword_value_is_rejected() {
         )]);
         assert_invalid(file, "pkg.Msg.f", value, &NameOptionProblem::Keyword);
     }
-    // The rule is the same for a field in a oneof, where the variant `Type`
-    // would be a usable name.
-    let msg = with_oneof(
-        message("Msg", vec![named(oneof_member("f", 1), "type")]),
-        "body",
-    );
-    assert_invalid(
-        file_of(vec![msg]),
-        "pkg.Msg.f",
-        "type",
-        &NameOptionProblem::Keyword,
-    );
+    // The rule is the same for a field in a oneof.
+    for value in ["type", "Self"] {
+        let msg = with_oneof(
+            message("Msg", vec![named(oneof_member("f", 1), value)]),
+            "body",
+        );
+        assert_invalid(
+            file_of(vec![msg]),
+            "pkg.Msg.f",
+            value,
+            &NameOptionProblem::Keyword,
+        );
+    }
 }
 
 #[test]
@@ -334,22 +349,33 @@ fn reserved_prefix_value_is_rejected() {
         "__buffa_unknown_fields",
         &NameOptionProblem::ReservedPrefix,
     );
+    // The rule is the same for a field in a oneof.
+    let msg = with_oneof(
+        message("Msg", vec![named(oneof_member("f", 1), "__buffa_x")]),
+        "body",
+    );
+    assert_invalid(
+        file_of(vec![msg]),
+        "pkg.Msg.f",
+        "__buffa_x",
+        &NameOptionProblem::ReservedPrefix,
+    );
 }
 
 #[test]
-fn value_with_no_variant_form_is_rejected_in_a_oneof() {
-    for (value, variant) in [("__", ""), ("_1", "1"), ("self_", "Self")] {
+fn underscore_values_name_a_variant_and_a_field_as_written() {
+    // The proto names `__` and `_1` derive a variant that is not an
+    // identifier (empty, `1`), and `self_` derives `Self`, which buffa
+    // escapes to `Self_`. An option value is not converted, so each one is
+    // the variant, or the struct field, as written.
+    for value in ["__", "_1", "self_"] {
         let msg = with_oneof(
             message("Msg", vec![named(oneof_member("f", 1), value)]),
             "body",
         );
-        let problem = NameOptionProblem::VariantName {
-            variant: variant.to_string(),
-        };
-        assert_invalid(file_of(vec![msg]), "pkg.Msg.f", value, &problem);
-    }
-    // Outside a oneof the same values name a struct field.
-    for value in ["__", "_1", "self_"] {
+        let code = generate_one(file_of(vec![msg]), &CodeGenConfig::default()).unwrap();
+        assert!(has_variant(&code, value), "{value}: {code}");
+
         let file = file_of(vec![message(
             "Msg",
             vec![named(string_field("f", 1), value)],
@@ -462,7 +488,7 @@ fn two_derived_names_that_collide_still_generate() {
             vec![
                 oneof_member("foo_bar", 1),
                 oneof_member("fooBar", 2),
-                named(oneof_member("raw", 3), "binary"),
+                named(oneof_member("raw", 3), "Binary"),
             ],
         ),
         "body",
@@ -544,6 +570,68 @@ fn two_variants_with_one_name_conflict() {
         "plain_text",
         "PlainText",
     );
+
+    // Two options with one value: the error names the second.
+    let msg = with_oneof(
+        message(
+            "Msg",
+            vec![
+                named(oneof_member("a", 1), "Same"),
+                named(oneof_member("b", 2), "Same"),
+            ],
+        ),
+        "body",
+    );
+    assert_conflict(
+        file_of(vec![msg]),
+        &CodeGenConfig::default(),
+        "b",
+        "a",
+        "Same",
+    );
+
+    // The value is the escaped variant of a keyword field: `self` derives
+    // `Self_`.
+    let msg = with_oneof(
+        message(
+            "Msg",
+            vec![
+                oneof_member("self", 1),
+                named(oneof_member("b", 2), "Self_"),
+            ],
+        ),
+        "body",
+    );
+    assert_conflict(
+        file_of(vec![msg]),
+        &CodeGenConfig::default(),
+        "b",
+        "self",
+        "Self_",
+    );
+}
+
+#[test]
+fn variants_that_differ_in_case_do_not_conflict() {
+    // `text` derives `Text`, and the values are not converted, so the four
+    // variants are distinct.
+    let msg = with_oneof(
+        message(
+            "Msg",
+            vec![
+                oneof_member("text", 1),
+                named(oneof_member("a", 2), "text"),
+                named(oneof_member("b", 3), "TEXT"),
+                named(oneof_member("c", 4), "plain_text"),
+                named(oneof_member("d", 5), "PlainText"),
+            ],
+        ),
+        "body",
+    );
+    let code = generate_one(file_of(vec![msg]), &CodeGenConfig::default()).unwrap();
+    for variant in ["Text", "text", "TEXT", "plain_text", "PlainText"] {
+        assert!(has_variant(&code, variant), "{variant}: {code}");
+    }
 }
 
 #[test]
@@ -554,14 +642,14 @@ fn variant_and_struct_field_do_not_conflict() {
             "Msg",
             vec![
                 named(oneof_member("text", 1), "note"),
-                named(string_field("b", 2), "Note"),
+                named(string_field("b", 2), "note"),
             ],
         ),
         "body",
     );
     let code = generate_one(file_of(vec![msg]), &CodeGenConfig::default()).unwrap();
-    assert!(has_variant(&code, "Note"), "{code}");
-    assert!(code.contains("pub Note:"), "{code}");
+    assert!(has_variant(&code, "note"), "{code}");
+    assert!(code.contains("pub note:"), "{code}");
 }
 
 #[test]
@@ -603,13 +691,8 @@ fn field_without_a_name_is_rejected() {
 
 #[test]
 fn error_messages_name_the_option_the_element_and_the_fix() {
-    let invalid = |field: FieldDescriptorProto, in_oneof: bool| {
+    let invalid = |field: FieldDescriptorProto| {
         let msg = message("Msg", vec![field]);
-        let msg = if in_oneof {
-            with_oneof(msg, "body")
-        } else {
-            msg
-        };
         generate_one(file_of(vec![msg]), &CodeGenConfig::default())
             .expect_err("an unusable name option must be rejected")
             .to_string()
@@ -618,29 +701,19 @@ fn error_messages_name_the_option_the_element_and_the_fix() {
         |value: &str| format!("invalid `(buffa.ext.field).name` = {value:?} on 'pkg.Msg.f': ");
 
     assert_eq!(
-        invalid(named(string_field("f", 1), "1st"), false),
+        invalid(named(string_field("f", 1), "1st")),
         prefix("1st")
             + "the value is not an ASCII Rust identifier (letters, digits and `_`, \
                not starting with a digit, and not `_` alone)"
     );
     assert_eq!(
-        invalid(named(string_field("f", 1), "fn"), false),
+        invalid(named(string_field("f", 1), "fn")),
         prefix("fn") + "the value is a Rust keyword, and buffa does not escape a `name` value"
     );
     assert_eq!(
-        invalid(named(string_field("f", 1), "__buffa_x"), false),
+        invalid(named(string_field("f", 1), "__buffa_x")),
         prefix("__buffa_x")
-            + "names that start with `__buffa_` are reserved for buffa's own fields"
-    );
-    assert_eq!(
-        invalid(named(oneof_member("f", 1), "__"), true),
-        prefix("__")
-            + "the value has no letter or digit, so its PascalCase form cannot name \
-               the oneof variant"
-    );
-    assert_eq!(
-        invalid(named(oneof_member("f", 1), "_1"), true),
-        prefix("_1") + "the oneof variant would be `1`, which is not usable as a variant name"
+            + "names that start with `__buffa_` are reserved for buffa's own identifiers"
     );
 
     let mut file = file_of(vec![message("Msg", vec![])]);

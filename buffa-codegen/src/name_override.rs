@@ -2,13 +2,14 @@
 //!
 //! [`field_name`] reads the option, and
 //! [`CodeGenContext::field_rust_name`] and
-//! [`oneof_variant_ident`](crate::oneof::oneof_variant_ident) use the value in
-//! place of the proto name.
+//! [`oneof_variant_ident`](crate::oneof::oneof_variant_ident) use the value
+//! as written, in place of the name they derive from the proto name.
 //!
 //! [`validate_file`] runs before any code is generated for a file. It rejects
 //! a value that is unusable as the identifier it asks for, and a value that
-//! gives two members of one message the same Rust name. So the emission
-//! code can build an identifier from the value without checking it.
+//! gives two members of one struct, or two variants of one oneof, the same
+//! Rust name. So the emission code can build an identifier from the value
+//! without checking it.
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -37,17 +38,9 @@ pub enum NameOptionProblem {
     /// The value is a Rust keyword. buffa escapes a proto name that is a
     /// keyword, and does not escape a `name` value.
     Keyword,
-    /// The value starts with `__buffa_`, the prefix of the fields that buffa
-    /// adds to a generated struct.
+    /// The value starts with `__buffa_`, the prefix of the identifiers that
+    /// buffa adds to generated code, such as the fields it adds to a struct.
     ReservedPrefix,
-    /// The option is on a field in a oneof, and the PascalCase form of the
-    /// value is not usable as the name of the enum variant.
-    #[non_exhaustive]
-    VariantName {
-        /// The PascalCase form of the value. It is empty, starts with a
-        /// digit, or is a Rust keyword.
-        variant: String,
-    },
     /// The option is on an extension. buffa generates a constant for an
     /// extension, and the option does not rename the constant.
     OnExtension,
@@ -63,16 +56,8 @@ impl fmt::Display for NameOptionProblem {
             Self::Keyword => {
                 f.write_str("the value is a Rust keyword, and buffa does not escape a `name` value")
             }
-            Self::ReservedPrefix => {
-                f.write_str("names that start with `__buffa_` are reserved for buffa's own fields")
-            }
-            Self::VariantName { variant } if variant.is_empty() => f.write_str(
-                "the value has no letter or digit, so its PascalCase form cannot name \
-                 the oneof variant",
-            ),
-            Self::VariantName { variant } => write!(
-                f,
-                "the oneof variant would be `{variant}`, which is not usable as a variant name"
+            Self::ReservedPrefix => f.write_str(
+                "names that start with `__buffa_` are reserved for buffa's own identifiers",
             ),
             Self::OnExtension => f.write_str("the option does not rename an extension"),
         }
@@ -135,11 +120,7 @@ fn validate_message(
         let oneof = field.oneof_index.filter(|_| is_real_oneof_member(field));
         let source = match name {
             Some(name) => {
-                let checked = check_identifier(&name).and_then(|()| match oneof {
-                    Some(_) => check_variant_source(&name),
-                    None => Ok(()),
-                });
-                if let Err(problem) = checked {
+                if let Err(problem) = check_identifier(&name) {
                     return Err(CodeGenError::InvalidNameOption {
                         option: FIELD_NAME_OPTION,
                         element,
@@ -233,7 +214,8 @@ impl Namespace {
     }
 }
 
-/// Check that `name` can be the name of a struct field exactly as written.
+/// Check that `name` can be the name of a struct field or of a oneof variant
+/// exactly as written.
 fn check_identifier(name: &str) -> Result<(), NameOptionProblem> {
     let mut chars = name.chars();
     let starts_as_identifier = chars
@@ -248,19 +230,6 @@ fn check_identifier(name: &str) -> Result<(), NameOptionProblem> {
         Err(NameOptionProblem::ReservedPrefix)
     } else {
         Ok(())
-    }
-}
-
-/// Check that the identifier `name` can name a oneof variant. The variant is
-/// `name` in PascalCase, which is empty for `__`, starts with a digit for
-/// `_1`, and is the keyword `Self` for `self_`.
-fn check_variant_source(name: &str) -> Result<(), NameOptionProblem> {
-    let variant = crate::oneof::to_pascal_case(name);
-    let is_identifier = variant.chars().next().is_some_and(|c| !c.is_ascii_digit());
-    if is_identifier && !crate::idents::is_rust_keyword(&variant) {
-        Ok(())
-    } else {
-        Err(NameOptionProblem::VariantName { variant })
     }
 }
 

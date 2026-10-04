@@ -271,8 +271,8 @@ fn plan_message(
     assigned: &mut HashSet<(String, String)>,
 ) {
     // Build the struct namespace: non-oneof-member fields + real oneofs.
-    // Oneof member fields appear only as PascalCase enum variants and inside
-    // per-arm scopes, so they cannot collide with struct members.
+    // Oneof member fields appear only as enum variants and inside per-arm
+    // scopes, so they cannot collide with struct members.
     let mut members: Vec<Member<'_>> = Vec::new();
     let mut real_oneofs: HashSet<i32> = HashSet::new();
     for field in &msg.field {

@@ -478,24 +478,24 @@ pub struct FieldOptions {
     /// string type = 1 [(buffa.ext.field).name = "kind"];
     /// ```
     ///
-    /// The struct field is the value exactly as written. The value must be an
-    /// ASCII Rust identifier that is not a keyword and does not start with
+    /// The Rust identifier is the value exactly as written. The value must be
+    /// an ASCII Rust identifier that is not a keyword and does not start with
     /// `__buffa_`. buffa does not escape it, and `idiomatic_field_names` does
     /// not convert it.
     ///
-    /// For a field in a oneof, the enum variant is the value in PascalCase:
-    /// each part between underscores starts with a capital letter, and the
-    /// underscores are removed. `plain_text` and `PlainText` both give the
-    /// variant `PlainText`. The PascalCase form must be an identifier too, so
-    /// `_1`, `__` and `self_` fail on a field in a oneof.
+    /// buffa does not check the case of the value. A field outside a oneof is
+    /// a struct field, where the Rust convention is snake_case. A field in a
+    /// oneof is an enum variant, where the convention is UpperCamelCase:
+    /// `PlainText` gives the variant `PlainText`, and `plain_text` gives the
+    /// variant `plain_text`.
     ///
     /// Only the Rust identifiers change. The wire format, the JSON and text
     /// format names, and the descriptor keep the proto name.
     ///
-    /// Code generation fails for any other value, for a value on an extension,
-    /// and for a value that another member already has as its Rust name. The
-    /// members of a struct are the fields outside a oneof and the oneofs, and
-    /// the members of a oneof's enum are its fields.
+    /// Code generation fails for a value that is not such an identifier, for
+    /// the option on an extension, and for a value that another member already
+    /// has as its Rust name. The members of a struct are the fields outside a
+    /// oneof and the oneofs, and the members of a oneof's enum are its fields.
     ///
     /// Field 1: `name`
     #[cfg_attr(

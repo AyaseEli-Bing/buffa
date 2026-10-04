@@ -1012,7 +1012,7 @@ message Document {
   string type = 1 [(buffa.ext.field).name = "kind"];
 
   oneof body {
-    string text = 2 [(buffa.ext.field).name = "plain_text"];
+    string text = 2 [(buffa.ext.field).name = "PlainText"];
   }
 }
 ```
@@ -1030,13 +1030,15 @@ pub enum Body {
 }
 ```
 
-The struct field is the option's value exactly as written, and `idiomatic_field_names` does not convert it. The names derived from the field follow the option: the view's field is also `kind`, and if `type` were `optional` its setter would be `with_kind`. For a field in a oneof, the variant is the value in PascalCase, so `plain_text` and `PlainText` both give `Body::PlainText`.
+The Rust identifier is the option's value exactly as written: buffa does not convert it, with or without `idiomatic_field_names`, and does not check its case. A field outside a oneof is a struct field, where the Rust convention is snake_case. A field in a oneof is an enum variant, where the convention is UpperCamelCase; `plain_text` there would give the variant `Body::plain_text`.
+
+The names derived from the field follow the option: the view's field is also `kind`, the view's oneof enum has the variant `PlainText`, and if `type` were `optional` its setter would be `with_kind`.
 
 Only Rust identifiers change. The wire format, the JSON and text format names, and the descriptor that reflection reads keep the proto name, so a peer or a stored message is unaffected. Build configuration that selects a field by its path, such as `field_attribute(".pkg.Document.type", ...)`, also keeps the proto name.
 
-The value must be an ASCII Rust identifier that is not a keyword and does not start with `__buffa_`. On a field in a oneof, its PascalCase form must also be an identifier, which excludes `_1`, `__` and `self_`. Any other value fails code generation with `CodeGenError::InvalidNameOption`, and so does the option on an extension.
+The value must be an ASCII Rust identifier that is not a keyword and does not start with `__buffa_`. Any other value fails code generation with `CodeGenError::InvalidNameOption`, and so does the option on an extension.
 
-A value that another member already has as its Rust name fails with `CodeGenError::NameOptionConflict`. A message's struct has one member for each field outside a oneof and one for each oneof. A oneof's enum has one variant for each of its fields. A value conflicts only inside its own struct or enum.
+A value that another member already has as its Rust name fails with `CodeGenError::NameOptionConflict`. A message's struct has one member for each field outside a oneof and one for each oneof. A oneof's enum has one variant for each of its fields. A value conflicts only inside its own struct or enum. Without the option, the variant of a field in a oneof is its proto name in PascalCase, so the value `PlainText` conflicts with a sibling field `plain_text`.
 
 ### Nested types and module structure
 

@@ -19,11 +19,14 @@ message Renamed {
   optional string plain = 6;
 
   oneof body {
-    // The variant is the value in PascalCase: `PlainText`.
-    string text = 7 [(buffa.ext.field).name = "plain_text"];
-    // A PascalCase value is the variant as written: `Binary`.
-    bytes raw = 8 [(buffa.ext.field).name = "Binary"];
+    // The variant is the value as written: `PlainText`.
+    string text = 7 [(buffa.ext.field).name = "PlainText"];
+    // A snake_case value is not converted: the variant is `raw_bytes`.
+    bytes raw = 8 [(buffa.ext.field).name = "raw_bytes"];
     Inner nested = 9;
+    // A variant with the name of a trait method. The `From` impls that
+    // buffa generates for `nested` call `From::from` on the same enum.
+    string origin = 10 [(buffa.ext.field).name = "from"];
   }
 
   message Inner {

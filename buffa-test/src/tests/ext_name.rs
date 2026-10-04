@@ -53,11 +53,52 @@ fn setter_follows_the_option() {
 fn variants_follow_the_option() {
     let mut msg = sample();
     assert_eq!(round_trip(&msg).body, Some(Body::PlainText("hello".into())));
-    msg.body = Some(Body::Binary(vec![1, 2]));
-    assert_eq!(round_trip(&msg).body, Some(Body::Binary(vec![1, 2])));
+    // The option's value is `raw_bytes`, and the variant keeps that case.
+    msg.body = Some(Body::raw_bytes(vec![1, 2]));
+    assert_eq!(round_trip(&msg).body, Some(Body::raw_bytes(vec![1, 2])));
     // A member without the option keeps the variant from its proto name.
     msg.body = Some(Body::Nested(Box::default()));
     assert_eq!(round_trip(&msg).body, msg.body);
+}
+
+#[test]
+fn from_impls_resolve_beside_a_variant_named_from() {
+    // `Body::from(..)` is the variant here, so the conversions go through
+    // `Into`.
+    let inner = Inner {
+        r#type: Some("inner".into()),
+        ..Default::default()
+    };
+    let body: Body = inner.clone().into();
+    assert_eq!(body, Body::Nested(Box::new(inner.clone())));
+    let body: Option<Body> = inner.into();
+    assert!(matches!(body, Some(Body::Nested(_))));
+
+    let mut msg = sample();
+    msg.body = Some(Body::from("here".into()));
+    assert_eq!(round_trip(&msg).body, msg.body);
+}
+
+#[test]
+fn snake_case_variant_works_in_views_json_and_text() {
+    use crate::ext_name::__buffa::view::oneof::renamed::Body as BodyView;
+
+    let mut msg = sample();
+    msg.body = Some(Body::raw_bytes(vec![1, 2]));
+
+    let bytes = msg.encode_to_vec();
+    let view = RenamedView::decode_view(&bytes).unwrap();
+    assert!(matches!(view.body, Some(BodyView::raw_bytes([1, 2]))));
+
+    let json = serde_json::to_value(&msg).unwrap();
+    assert_eq!(json["raw"], serde_json::json!("AQI="));
+    let back: Renamed = serde_json::from_value(json).unwrap();
+    assert_eq!(back, msg);
+
+    let text = buffa::text::encode_to_string(&msg);
+    assert!(text.contains("raw: "), "{text}");
+    let back: Renamed = buffa::text::decode_from_str(&text).unwrap();
+    assert_eq!(back, msg);
 }
 
 #[test]

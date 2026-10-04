@@ -577,13 +577,16 @@ pub fn generate_oneof_enum(
             // From<T> for Option<Oneof> — legal only when T is local
             // (RFC 2451: T as trait param satisfies the orphan rule).
             // Collapses struct-literal construction to `field: Msg{..}.into()`.
+            // The call names the trait: `Enum::from(v)` would be the variant
+            // constructor when a `(buffa.ext.field).name` option names a
+            // variant `from`.
             let from_option = if ty_is_extern {
                 quote! {}
             } else {
                 quote! {
                     impl From<#ty> for ::core::option::Option<#rust_enum_ident> {
                         fn from(v: #ty) -> Self {
-                            Self::Some(#rust_enum_ident::from(v))
+                            Self::Some(<#rust_enum_ident as ::core::convert::From<#ty>>::from(v))
                         }
                     }
                 }
@@ -984,25 +987,27 @@ pub(crate) fn resolve_oneof_idents(
 
 /// Build the Rust variant identifier for a oneof field.
 ///
-/// PascalCase the field's `(buffa.ext.field).name` option, or without one its
-/// proto name, then sanitize against reserved Rust idents — the only
-/// lowercase Rust keyword whose PascalCase form is also reserved is `self` →
-/// `Self`, which would otherwise produce `pub enum Foo { Self(...) }` and
-/// fail to parse. `make_field_ident` suffixes such names with `_` so the
-/// variant becomes `Self_`.
+/// The variant is the field's `(buffa.ext.field).name` option exactly as
+/// written. Without the option, PascalCase the proto name, then sanitize
+/// against reserved Rust idents. `self` is the only lowercase Rust keyword
+/// whose PascalCase form is also reserved: `Self` would otherwise produce
+/// `pub enum Foo { Self(...) }` and fail to parse. `make_field_ident`
+/// suffixes such names with `_` so the variant becomes `Self_`.
 ///
 /// # Panics
 ///
-/// Panics if the PascalCase form is not an identifier.
+/// Panics if the name is not an identifier.
 /// [`name_override::validate_file`](crate::name_override::validate_file)
-/// rejects such an option value. A proto name such as `_1` still panics.
+/// rejects such an option value. A proto name whose PascalCase form is not
+/// an identifier, such as `_1`, still panics.
 pub(crate) fn oneof_variant_ident(field: &FieldDescriptorProto) -> proc_macro2::Ident {
-    let option = crate::name_override::field_name(field);
-    let name = option
-        .as_deref()
-        .or(field.name.as_deref())
-        .unwrap_or_default();
-    crate::idents::make_field_ident(&to_pascal_case(name))
+    match crate::name_override::field_name(field) {
+        Some(name) => quote::format_ident!("{}", name),
+        None => {
+            let name = field.name.as_deref().unwrap_or_default();
+            crate::idents::make_field_ident(&to_pascal_case(name))
+        }
+    }
 }
 
 /// Convert a snake_case identifier to PascalCase.

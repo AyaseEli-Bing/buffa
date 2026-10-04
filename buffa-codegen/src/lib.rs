@@ -5281,8 +5281,8 @@ pub enum CodeGenError {
     /// the element that sets it.
     ///
     /// buffa uses the value as written, so it must be an ASCII Rust
-    /// identifier that is not a keyword. [`NameOptionProblem`] lists every
-    /// case.
+    /// identifier that is not a keyword and does not start with `__buffa_`.
+    /// [`NameOptionProblem`] lists every case.
     #[error("invalid `{option}` = {name:?} on '{element}': {problem}")]
     #[non_exhaustive]
     InvalidNameOption {

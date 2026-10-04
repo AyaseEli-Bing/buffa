@@ -343,6 +343,14 @@
       "created_at": "2026-10-02T02:45:32Z",
       "repoId": 1174622060,
       "pullRequestNo": 507
+    },
+    {
+      "name": "benedikt-bartscher",
+      "id": 31854409,
+      "comment_id": 5982551787,
+      "created_at": "2026-10-04T17:25:33Z",
+      "repoId": 1174622060,
+      "pullRequestNo": 552
     }
   ]
 }

@@ -631,6 +631,16 @@ pub mod prelude_shadow {
     buffa::include_proto!("test.prelude_shadow");
 }
 
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    dead_code,
+    non_camel_case_types
+)]
+pub mod type_name_escapes {
+    buffa::include_proto!("test.type_name_escapes");
+}
+
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod float_default_shadow {
     buffa::include_proto!("f32");

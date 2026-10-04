@@ -456,6 +456,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for prelude_shadow.proto");
 
+    // Messages and enums named after primitive types, `Self` and a keyword.
+    // JSON, text and setters are on because the serde derives and the
+    // generated text and setter code name the primitives.
+    buffa_build::Config::new()
+        .files(&["protos/type_name_escapes.proto"])
+        .includes(&["protos/"])
+        .generate_json(true)
+        .generate_text(true)
+        .generate_with_setters(true)
+        .compile()
+        .expect("buffa_build failed for type_name_escapes.proto");
+
     // Special float defaults in a package named `f32` must not resolve
     // against generated `f32`/`f64` modules. The nested extension constants
     // deliberately occupy all six shadowable paths; compilation is the

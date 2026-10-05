@@ -726,6 +726,34 @@ fn main() {
         .compile()
         .expect("buffa_build failed for debug_redact.proto");
 
+    // `[deprecated = true]` — generated declarations carry `#[deprecated]` and
+    // the impls that visit every field carry `#[allow(deprecated)]`. Views,
+    // text, JSON, lazy views and vtable reflection are on so every guarded
+    // surface is compiled, and `Audit` takes the table codec, where the field
+    // offsets are taken inside a `static` rather than an impl. The proof is that
+    // this crate compiles clean under `-D warnings`.
+    buffa_build::Config::new()
+        .files(&["protos/deprecated.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .generate_text(true)
+        .generate_json(true)
+        .lazy_views(true)
+        .generate_reflection(true)
+        .codec_strategy_in(buffa_build::CodecStrategy::Table, &[".deprecated.Audit"])
+        .compile()
+        .expect("buffa_build failed for deprecated.proto");
+
+    // The proto2 half: no field is deprecated, but `[default = OLD]` names a
+    // deprecated enum variant, so the `Default` impl, `Message::clear` and the
+    // extension's default getter spell `Size::OLD` out and need the guard.
+    buffa_build::Config::new()
+        .files(&["protos/deprecated_proto2.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .compile()
+        .expect("buffa_build failed for deprecated_proto2.proto");
+
     // `skip_debug` — the hand-written `Debug` impls in `src/lib.rs` compile
     // only if the generated ones are omitted. Views enabled so the view of a
     // matched message compiles too.

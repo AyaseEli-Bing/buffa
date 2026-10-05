@@ -90,6 +90,15 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
     }
 }
 
+/// True when the enum value carries `[deprecated = true]`.
+fn is_deprecated_value(value: &crate::generated::descriptor::EnumValueDescriptorProto) -> bool {
+    value
+        .options
+        .as_option()
+        .and_then(|o| o.deprecated)
+        .unwrap_or(false)
+}
+
 /// Generate Rust code for a protobuf enum type.
 ///
 /// `rust_name` is the Rust identifier to use.  For top-level enums this is
@@ -130,6 +139,12 @@ pub fn generate_enum(
     // a CamelCase alias must not duplicate) and `alias_target` is the variant a
     // generated `const` would point at.
     let mut value_records: Vec<(String, Ident, String)> = Vec::new();
+    // Any value carries `[deprecated = true]`; drives the `#[allow(deprecated)]`
+    // on the items that have to name variants.
+    let mut has_deprecated_value = false;
+    // Variant identifiers of deprecated values, so aliases (proto `allow_alias`
+    // and idiomatic CamelCase) can inherit the marker.
+    let mut deprecated_idents: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for v in &enum_desc.value {
         let value_name = v
@@ -143,11 +158,24 @@ pub fn generate_enum(
         let value_fqn = format!("{}.{}", proto_fqn, value_name);
         let variant_doc =
             crate::comments::doc_attrs_resolved(ctx.comment(&value_fqn), proto_fqn, &ctx.type_map);
+        // `#[deprecated]` from the value's `[deprecated = true]` option, as
+        // prost-build emits it. `has_deprecated_value` then guards the items
+        // below that have to name the variant (aliases, `Default`,
+        // `Enumeration`).
+        let own_deprecated = is_deprecated_value(v);
+        has_deprecated_value |= own_deprecated;
 
         if let Some(&primary_name) = seen.get(&number) {
             let primary_ident = crate::message::make_field_ident(primary_name);
+            // An alias names the same value as its primary, so it inherits the
+            // primary's deprecation — otherwise `Size::TINY` would be a quiet
+            // way to reach a deprecated value.
+            let deprecated_attr = (own_deprecated
+                || deprecated_idents.contains(&primary_ident.to_string()))
+            .then(|| quote! { #[deprecated] });
             alias_consts.push(quote! {
                 #variant_doc
+                #deprecated_attr
                 #[allow(non_upper_case_globals)]
                 pub const #variant_ident: Self = Self::#primary_ident;
             });
@@ -164,10 +192,14 @@ pub fn generate_enum(
             }
         } else {
             seen.insert(number, value_name);
+            let deprecated_attr = own_deprecated.then(|| quote! { #[deprecated] });
+            if own_deprecated {
+                deprecated_idents.insert(variant_ident.to_string());
+            }
             if first_variant.is_none() {
                 first_variant = Some(variant_ident.clone());
             }
-            variants.push(quote! { #variant_doc #variant_ident = #number });
+            variants.push(quote! { #variant_doc #deprecated_attr #variant_ident = #number });
             from_i32_arms.push(quote! {
                 #number => ::core::option::Option::Some(Self::#variant_ident)
             });
@@ -192,13 +224,20 @@ pub fn generate_enum(
     // disabled). Returns the extra `const` items to emit and, when aliases are
     // suppressed by a conflict, a doc note to append to the enum.
     let enum_simple_name = enum_desc.name.as_deref().unwrap_or(rust_name);
-    let (idiomatic_consts, idiomatic_doc_note) =
-        idiomatic_aliases(ctx, rust_name, enum_simple_name, value_records);
+    let (idiomatic_consts, idiomatic_doc_note) = idiomatic_aliases(
+        ctx,
+        rust_name,
+        enum_simple_name,
+        value_records,
+        &deprecated_idents,
+    );
 
+    let deprecated_value_allow = has_deprecated_value.then(|| quote! { #[allow(deprecated)] });
     let alias_block = if alias_consts.is_empty() && idiomatic_consts.is_empty() {
         quote! {}
     } else {
         quote! {
+            #deprecated_value_allow
             impl #name_ident {
                 #(#alias_consts)*
                 #(#idiomatic_consts)*
@@ -215,8 +254,15 @@ pub fn generate_enum(
     // protoc would reject (open enum, non-zero first value) can observe a
     // difference, and there first-declared is the spec-faithful choice too.
     let default_variant = first_variant;
+    let first_variant_deprecated = default_variant
+        .as_ref()
+        .is_some_and(|v| deprecated_idents.contains(&v.to_string()))
+        .then(|| quote! { #[allow(deprecated)] });
     let default_block = match default_variant {
         Some(v) => quote! {
+            // This impl names exactly one variant, so it needs the guard only
+            // when that variant is the deprecated one.
+            #first_variant_deprecated
             impl ::core::default::Default for #name_ident {
                 fn default() -> Self {
                     Self::#v
@@ -318,6 +364,7 @@ pub fn generate_enum(
 
         #serde_impls
 
+        #deprecated_value_allow
         impl ::buffa::Enumeration for #name_ident {
             fn from_i32(value: i32) -> ::core::option::Option<Self> {
                 match value {
@@ -372,6 +419,7 @@ fn idiomatic_aliases(
     rust_name: &str,
     enum_simple_name: &str,
     records: Vec<(String, Ident, String)>,
+    deprecated_idents: &std::collections::HashSet<String>,
 ) -> (Vec<TokenStream>, TokenStream) {
     use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
     use std::fmt::Write;
@@ -461,6 +509,11 @@ fn idiomatic_aliases(
                 // identifiers (e.g. `r#type`) don't resolve as intra-doc
                 // links, so fall back to plain code formatting for those.
                 let target_name = target.to_string();
+                // The CamelCase alias is another name for the same variant, so
+                // it carries that variant's deprecation.
+                let deprecated_attr = deprecated_idents
+                    .contains(&target_name)
+                    .then(|| quote! { #[deprecated] });
                 let alias_doc = if let Some(stripped) = target_name.strip_prefix("r#") {
                     format!("Idiomatic alias for `{stripped}`; `Debug` prints the variant name.")
                 } else {
@@ -470,6 +523,7 @@ fn idiomatic_aliases(
                 };
                 Some(quote! {
                     #[doc = #alias_doc]
+                    #deprecated_attr
                     #[allow(non_upper_case_globals)]
                     pub const #escaped: Self = Self::#target;
                 })

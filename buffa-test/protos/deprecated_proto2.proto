@@ -1,0 +1,27 @@
+syntax = "proto2";
+
+package deprecated_proto2;
+
+// The proto2 half of `[deprecated = true]`: a *default value* that names a
+// deprecated enum variant. No field here is deprecated, yet the generated
+// `Default` impl, `Message::clear`, and an extension's default getter all spell
+// `Size::OLD` out, so they need the guard. Compiled by build.rs, which is what
+// proves the paths — see the codegen unit tests for the emission itself.
+
+enum Size {
+  OLD = 1 [deprecated = true];
+  NEW = 2;
+}
+
+message Holder {
+  // `required` keeps implicit presence, so the default is a real expression
+  // rather than `None`.
+  required Size size = 1 [default = OLD];
+  optional string note = 2;
+
+  extensions 100 to 200;
+}
+
+extend Holder {
+  optional Size legacy_size = 100 [default = OLD];
+}

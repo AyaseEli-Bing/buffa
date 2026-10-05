@@ -1811,6 +1811,13 @@ impl Config {
     /// Also applies to oneof variants when `path` matches
     /// `".pkg.Msg.my_oneof.variant_name"`.
     ///
+    /// A `#[deprecated]` supplied here wins over the one codegen derives from
+    /// the field's `[deprecated = true]` option — rustc permits only one
+    /// `deprecated` attribute per item — so this is also how to attach a note
+    /// naming the replacement. Either source marks the field and its `with_*`
+    /// setter, and either one makes the generated items that visit the field
+    /// carry `#[allow(deprecated)]`.
+    ///
     /// # Example
     ///
     /// ```rust,ignore

@@ -1,0 +1,4 @@
+kind: Breaking changes
+body: |-
+    **Published types now carry `#[deprecated]` where the `.proto` said `[deprecated = true]`** (#548). Reading one of these from your crate warns where it previously compiled silently: `google.protobuf.Method::{syntax, edition}` from `buffa-types`, and the deprecated option fields of `descriptor.proto` from `buffa-descriptor` — `FieldOptions::weak`, `FileOptions::java_generate_equals_and_hash`, `MessageOptions::deprecated_legacy_json_field_conflicts` and `EnumOptions::deprecated_legacy_json_field_conflicts`. The option has always said these are deprecated; the markers were simply missing. Crates built with `-D warnings` or `#![deny(warnings)]` fail after upgrading until `#[allow(deprecated)]` is placed on the call sites that must keep using them. There is no opt-out knob yet — pin the version if you cannot absorb the diagnostics in this step.
+time: 2026-10-05T04:40:00+08:00

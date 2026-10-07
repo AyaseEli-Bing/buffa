@@ -255,6 +255,8 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A oneof member has required or repeated cardinality instead of optional.
+    InvalidOneofCardinality { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
     /// A field marked `proto3_optional` does not have optional cardinality.
@@ -495,6 +497,9 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
             ),
+            Self::InvalidOneofCardinality { field } => {
+                write!(f, "field {field} is a oneof member but is not optional")
+            }
             Self::Proto3OptionalOutsideProto3 { field } => write!(
                 f,
                 "field {field} is marked proto3_optional outside a proto3 file"
@@ -2301,6 +2306,9 @@ impl DescriptorPool {
             if containing_msg.is_some() && f.oneof_index.is_none() {
                 return Err(PoolError::Proto3OptionalWithoutOneof { field: field_fqn });
             }
+        }
+        if containing_msg.is_some() && f.oneof_index.is_some() && label != Label::LABEL_OPTIONAL {
+            return Err(PoolError::InvalidOneofCardinality { field: field_fqn });
         }
         let is_repeated = label == Label::LABEL_REPEATED;
 

@@ -376,6 +376,8 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// A message in a proto3 file declares an extension range.
+    ExtensionRangeInProto3 { message: String },
     /// Two extension ranges declared by the same message overlap. `end` is
     /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
     /// as declared: `start..end` is the later of the two in declaration
@@ -689,6 +691,9 @@ impl core::fmt::Display for PoolError {
                 Bound(*start),
                 Bound(*end),
             ),
+            Self::ExtensionRangeInProto3 { message } => {
+                write!(f, "message {message} declares an extension range in proto3")
+            }
             Self::OverlappingExtensionRange {
                 message,
                 start,
@@ -1804,6 +1809,9 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        if scope.proto3 && !msg.extension_range.is_empty() {
+            return Err(PoolError::ExtensionRangeInProto3 { message: fqn });
+        }
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
 

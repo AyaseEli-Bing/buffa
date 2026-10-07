@@ -218,10 +218,6 @@ pub enum PoolError {
         type_name: String,
         defined_in: String,
     },
-    /// A singular message or group field declares an explicit default value. A
-    /// repeated one reports
-    /// [`RepeatedFieldWithDefault`](Self::RepeatedFieldWithDefault).
-    MessageFieldWithDefault { field: String },
     /// A field had no `type_name` for a `TYPE_MESSAGE`/`TYPE_GROUP`/`TYPE_ENUM`.
     MissingTypeName { field: String },
     /// A field whose `type` is set to a scalar type also has a non-empty
@@ -259,8 +255,6 @@ pub enum PoolError {
     /// The bracket rule is off for a message that sets the
     /// `deprecated_legacy_json_field_conflicts` option, as it is in protoc.
     InvalidJsonName { field: String, name: String },
-    /// A repeated field declares an explicit default value.
-    RepeatedFieldWithDefault { field: String },
     /// A field refers to a oneof declaration that does not exist in its
     /// containing message.
     InvalidOneofIndex {
@@ -270,6 +264,29 @@ pub enum PoolError {
     },
     /// A oneof member has required or repeated cardinality instead of optional.
     InvalidOneofCardinality { field: String },
+    /// A repeated field declares an explicit default value.
+    RepeatedFieldWithDefault { field: String },
+    /// A singular message or group field declares an explicit default value. A
+    /// repeated one reports
+    /// [`RepeatedFieldWithDefault`](Self::RepeatedFieldWithDefault).
+    MessageFieldWithDefault { field: String },
+    /// A singular scalar or enum field declares an explicit default value in a
+    /// proto3 file. A repeated field reports
+    /// [`RepeatedFieldWithDefault`](Self::RepeatedFieldWithDefault), and a
+    /// message or group field reports
+    /// [`MessageFieldWithDefault`](Self::MessageFieldWithDefault), in every
+    /// syntax.
+    Proto3FieldWithDefault { field: String },
+    /// A singular field with implicit presence declares an explicit default
+    /// value. Every declared default is rejected, the type's zero value
+    /// included. A field has implicit presence in an editions file when
+    /// `features.field_presence` resolves to `IMPLICIT`. Such a field is not
+    /// encoded when it holds its zero value, so it cannot have another
+    /// default.
+    ///
+    /// An extension always has presence. A proto3 field reports
+    /// [`Proto3FieldWithDefault`](Self::Proto3FieldWithDefault) instead.
+    ImplicitPresenceFieldWithDefault { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
     /// A field marked `proto3_optional` does not have optional cardinality.
@@ -553,6 +570,13 @@ impl core::fmt::Display for PoolError {
             Self::InvalidOneofCardinality { field } => {
                 write!(f, "field {field} is a oneof member but is not optional")
             }
+            Self::Proto3FieldWithDefault { field } => {
+                write!(f, "field {field} declares a default value in a proto3 file")
+            }
+            Self::ImplicitPresenceFieldWithDefault { field } => write!(
+                f,
+                "field {field} has implicit presence and declares a default value"
+            ),
             Self::Proto3OptionalOutsideProto3 { field } => write!(
                 f,
                 "field {field} is marked proto3_optional outside a proto3 file"
@@ -2416,6 +2440,11 @@ impl DescriptorPool {
         if matches!(element, SingularKind::Message(_)) && f.default_value.is_some() {
             return Err(PoolError::MessageFieldWithDefault { field: field_fqn });
         }
+        // After the two rules above, so that a repeated or message field
+        // reports the rule that holds in every syntax.
+        if scope.proto3 && f.default_value.is_some() {
+            return Err(PoolError::Proto3FieldWithDefault { field: field_fqn });
+        }
 
         // Detect map fields: repeated + message type + the message is a
         // map_entry. `containing_msg` is `None` for extensions, which cannot
@@ -2478,6 +2507,15 @@ impl DescriptorPool {
         } else {
             resolved.field_presence
         };
+        // An extension has presence whatever its features resolve to, which
+        // the ladder above does not model.
+        if !is_repeated
+            && !is_extension
+            && presence == FieldPresence::Implicit
+            && f.default_value.is_some()
+        {
+            return Err(PoolError::ImplicitPresenceFieldWithDefault { field: field_fqn });
+        }
 
         // Resolve packed encoding.
         // Per the spec, only repeated scalar/enum fields are packable.

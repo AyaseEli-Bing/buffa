@@ -255,6 +255,8 @@ pub enum PoolError {
     /// The bracket rule is off for a message that sets the
     /// `deprecated_legacy_json_field_conflicts` option, as it is in protoc.
     InvalidJsonName { field: String, name: String },
+    /// A repeated field declares an explicit default value.
+    RepeatedFieldWithDefault { field: String },
     /// A field refers to a oneof declaration that does not exist in its
     /// containing message.
     InvalidOneofIndex {
@@ -529,6 +531,9 @@ impl core::fmt::Display for PoolError {
                         "field {field} has JSON name {name:?}, which has the form of an extension key"
                     )
                 }
+            }
+            Self::RepeatedFieldWithDefault { field } => {
+                write!(f, "repeated field {field} declares a default value")
             }
             Self::InvalidOneofIndex {
                 message,
@@ -2394,6 +2399,9 @@ impl DescriptorPool {
                 || resolved.field_presence == FieldPresence::LegacyRequired)
         {
             return Err(PoolError::RequiredExtension { field: field_fqn });
+        }
+        if is_repeated && f.default_value.is_some() {
+            return Err(PoolError::RepeatedFieldWithDefault { field: field_fqn });
         }
 
         // Resolve the singular kind (element type).

@@ -218,6 +218,10 @@ pub enum PoolError {
         type_name: String,
         defined_in: String,
     },
+    /// A singular message or group field declares an explicit default value. A
+    /// repeated one reports
+    /// [`RepeatedFieldWithDefault`](Self::RepeatedFieldWithDefault).
+    MessageFieldWithDefault { field: String },
     /// A field had no `type_name` for a `TYPE_MESSAGE`/`TYPE_GROUP`/`TYPE_ENUM`.
     MissingTypeName { field: String },
     /// A field whose `type` is set to a scalar type also has a non-empty
@@ -465,6 +469,9 @@ impl core::fmt::Display for PoolError {
                     "file {file} weak_dependency index {index} is out of range \
                      ({dependency_count} dependencies declared)"
                 )
+            }
+            Self::MessageFieldWithDefault { field } => {
+                write!(f, "message field {field} declares a default value")
             }
             Self::MissingTypeName { field } => write!(f, "field {field} has no type_name"),
             Self::UnexpectedTypeName { field, type_name } => write!(
@@ -2406,6 +2413,9 @@ impl DescriptorPool {
 
         // Resolve the singular kind (element type).
         let element = self.resolve_singular(f.r#type, f.type_name.as_deref(), &field_fqn, scope)?;
+        if matches!(element, SingularKind::Message(_)) && f.default_value.is_some() {
+            return Err(PoolError::MessageFieldWithDefault { field: field_fqn });
+        }
 
         // Detect map fields: repeated + message type + the message is a
         // map_entry. `containing_msg` is `None` for extensions, which cannot

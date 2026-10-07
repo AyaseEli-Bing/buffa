@@ -2271,19 +2271,18 @@ fn references_deprecated(ctx: &CodeGenContext, msg: &DescriptorProto, proto_fqn:
 ///
 /// Those visits are structural (an encoder has to touch every field), so
 /// without the guard a single `[deprecated = true]` field makes the generated
-/// module itself warn — which is the flood #548 reports. Empty unless `msg`
-/// needs it, so unaffected messages keep byte-identical output.
+/// module itself warn. Empty unless `msg` needs it, so unaffected messages
+/// keep byte-identical output.
 ///
-/// Blast radius, accepted deliberately: inside these impls the lint is quiet,
-/// so a *foreign* deprecated item reached through a `string_type`/`extern_path`
-/// remap or a custom default expression is not reported from generated code.
-/// Narrowing it to per-field statements would touch every statement builder in
-/// `impl_message.rs` for a signal nobody reads in generated code.
+/// Inside these impls the lint is quiet for every item, so a *foreign*
+/// deprecated item reached through a `string_type`/`extern_path` remap or a
+/// custom default expression is not reported from generated code. Narrowing
+/// the guard to per-field statements would touch every statement builder in
+/// `impl_message.rs`.
 ///
-/// Oneof variants are out of scope for this change, so a deprecated oneof
-/// member is neither marked nor guarded here; `examples/addressbook`, whose
-/// variant is marked through `field_attribute`, still needs its module-level
-/// `#[allow(deprecated)]` until they are.
+/// A deprecated oneof member is neither marked nor guarded here;
+/// `examples/addressbook`, whose variant is marked through `field_attribute`,
+/// needs its module-level `#[allow(deprecated)]` for that reason.
 pub(crate) fn deprecated_field_allow(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,

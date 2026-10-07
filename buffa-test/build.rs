@@ -165,7 +165,8 @@ fn main() {
     // Generated table code needs `core::mem::offset_of!`, stable in Rust 1.77,
     // and the workspace MSRV is 1.75, where it is a compile error by design.
     println!("cargo:rustc-check-cfg=cfg(has_table_codec)");
-    if rustc_minor() >= 77 {
+    let table_codec = rustc_minor() >= 77;
+    if table_codec {
         println!("cargo:rustc-cfg=has_table_codec");
         compile_both_codecs("table_codec.proto", &read_proto("table_codec.proto"), "tc");
         compile_both_codecs(
@@ -743,9 +744,10 @@ fn main() {
 
     // `[deprecated = true]` — generated declarations carry `#[deprecated]` and
     // the impls that visit every field carry `#[allow(deprecated)]`. Views,
-    // text, JSON, lazy views, vtable reflection and the `Arbitrary` derive are
-    // on so every guarded surface is compiled. The proof is that this crate
-    // compiles clean under `-D warnings`.
+    // text, JSON, lazy views and vtable reflection are on so every guarded
+    // surface is compiled. The proof is that this crate compiles clean under
+    // `-D warnings`. `generate_arbitrary` adds the `Arbitrary` impls, which
+    // only a build with the `arbitrary` feature compiles.
     let mut deprecated = buffa_build::Config::new()
         .files(&["protos/deprecated.proto"])
         .includes(&["protos/"])
@@ -756,8 +758,8 @@ fn main() {
         .generate_reflection(true)
         .generate_arbitrary(true);
     // `Audit` takes the table codec, where the field offsets are taken inside
-    // a `static` rather than an impl. The table codec needs Rust 1.77.
-    if rustc_minor() >= 77 {
+    // a `static` rather than an impl.
+    if table_codec {
         deprecated =
             deprecated.codec_strategy_in(buffa_build::CodecStrategy::Table, &[".deprecated.Audit"]);
     }
@@ -765,9 +767,11 @@ fn main() {
         .compile()
         .expect("buffa_build failed for deprecated.proto");
 
-    // The proto2 half: no field is deprecated, but `[default = OLD]` names a
-    // deprecated enum variant, so the `Default` impl, `Message::clear` and the
-    // extension's default getter spell `Size::OLD` out and need the guard.
+    // The proto2 half: no field is deprecated, but a `[default = …]` names a
+    // deprecated enum variant or an alias of one, so the `Default` impl,
+    // `Message::clear` and the extension's default getter spell it out and
+    // need the guard. The enums are closed here, so `generate_arbitrary` puts
+    // their `Arbitrary` impls behind a bare enum field.
     buffa_build::Config::new()
         .files(&["protos/deprecated_proto2.proto"])
         .includes(&["protos/"])

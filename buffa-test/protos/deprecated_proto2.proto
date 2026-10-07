@@ -3,9 +3,9 @@ syntax = "proto2";
 package deprecated_proto2;
 
 // The proto2 half of `[deprecated = true]`: a *default value* that names a
-// deprecated enum variant. No field here is deprecated, yet the generated
-// `Default` impl, `Message::clear`, and an extension's default getter all spell
-// `Size::OLD` out, so they need the guard. Compiled by build.rs, which is what
+// deprecated enum variant, or an alias of one. No field here is deprecated, yet
+// the generated `Default` impl, `Message::clear`, and an extension's default
+// getter all spell the value out, so they need the guard. Compiled by build.rs, which is what
 // proves the paths — see the codegen unit tests for the emission itself.
 
 enum Size {

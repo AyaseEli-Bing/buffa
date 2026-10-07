@@ -76,7 +76,7 @@ pub struct CodeGenContext<'a> {
     /// default (`EnumValue::Known(first)` instead of the derived wire-zero).
     enum_first_value: HashMap<String, i32>,
     /// Enum FQN → proto names of its values whose generated item is
-    /// `#[deprecated]`: a value with `[deprecated = true]`, or an alias of one.
+    /// `#[deprecated]`; see [`Self::enum_value_is_deprecated`].
     /// Built on first use, and consulted only when a field declares an explicit
     /// enum `default_value`, so the common path never walks the descriptor set.
     deprecated_enum_values: std::cell::OnceCell<HashMap<String, HashSet<String>>>,
@@ -858,8 +858,9 @@ impl<'a> CodeGenContext<'a> {
     }
 
     /// Whether the generated item for the enum value `value_name` of enum
-    /// `proto_fqn` is `#[deprecated]`: the value carries `[deprecated = true]`,
-    /// or it is an alias of a value that does. `proto_fqn` is the dotted form used by
+    /// `proto_fqn` is `#[deprecated]`, by the rule in
+    /// [`deprecated_items`](crate::enumeration::deprecated_items).
+    /// `proto_fqn` is the dotted form used by
     /// `FieldDescriptorProto::type_name` (`.pkg.Enum`, `.pkg.Msg.Nested`).
     ///
     /// Enums imported from a dependency file are in `files` along with the
@@ -1856,10 +1857,10 @@ fn collect_enum_first_values(files: &[FileDescriptorProto]) -> HashMap<String, i
     map
 }
 
-/// Record the proto names of every enum's values whose generated item carries
+/// The proto names of each enum's values whose generated item is
 /// `#[deprecated]`, keyed by dotted FQN (same key form as
 /// [`collect_enum_first_values`]). Consulted only to decide whether a
-/// generated item that spells out an enum variant — a `[default = V]`
+/// generated item that spells out an enum value — a `[default = V]`
 /// expression — needs `#[allow(deprecated)]`.
 fn collect_deprecated_enum_values(
     files: &[FileDescriptorProto],
@@ -1869,26 +1870,12 @@ fn collect_deprecated_enum_values(
             return;
         };
         let fqn = format!("{prefix}{name}");
-        // The first value declared for a number is the variant; a later value
-        // with that number is an alias `const`, which carries the variant's
-        // marker as well as its own (see `enumeration::generate_enum`).
-        let mut variant_deprecated: HashMap<i32, bool> = HashMap::new();
-        for v in &e.value {
-            let own = v
-                .options
-                .as_option()
-                .and_then(|o| o.deprecated)
-                .unwrap_or(false);
-            let inherited = v
-                .number
-                .is_some_and(|number| *variant_deprecated.entry(number).or_insert(own));
-            let deprecated = own || inherited;
-            if deprecated {
-                if let Some(value_name) = v.name.as_deref() {
-                    map.entry(fqn.clone())
-                        .or_default()
-                        .insert(value_name.to_string());
-                }
+        let deprecated = crate::enumeration::deprecated_items(e);
+        for (v, _) in e.value.iter().zip(deprecated).filter(|(_, d)| *d) {
+            if let Some(value_name) = v.name.as_deref() {
+                map.entry(fqn.clone())
+                    .or_default()
+                    .insert(value_name.to_string());
             }
         }
     }

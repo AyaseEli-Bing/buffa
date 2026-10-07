@@ -33,8 +33,9 @@ message Levels {
   int32 high = 2;
 }
 
-// Compiled with the table codec (see build.rs), where field offsets are taken
-// inside `::buffa::__table!` in a `static` initializer rather than in an impl —
+// Compiled with the table codec on Rust 1.77 and later (see build.rs), where
+// field offsets are taken inside `::buffa::__table!` in a `static` initializer
+// rather than in an impl —
 // the guard has to sit on the static for that path to stay quiet.
 message Audit {
   string actor = 1;

@@ -190,6 +190,9 @@ impl Config {
     ///
     /// The derive is gated behind `#[cfg_attr(feature = "arbitrary", ...)]`
     /// so the downstream crate compiles with or without the feature enabled.
+    /// An enum with a `[deprecated = true]` variant gets a generated impl
+    /// under the same gate instead, because the derive would warn on that
+    /// variant. The impl maps input to variants as the derive does.
     ///
     /// Your crate's Cargo feature **must be named exactly `"arbitrary"`** —
     /// the generated `cfg_attr` uses that literal string and cannot be

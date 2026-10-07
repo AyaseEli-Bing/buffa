@@ -1066,6 +1066,11 @@ message whose field declares `[default = DEPRECATED_VALUE]` needs the same guard
 even though no field of its own is deprecated, and so does an extension's default
 getter.
 
+`derive(Arbitrary)` takes no such guard on an enum, so under `generate_arbitrary`
+an enum with a deprecated variant gets a generated `Arbitrary` impl in place of
+the derive. The impl maps input to variants as the derive does, so marking a
+value deprecated does not change what a fuzz input builds.
+
 Writes are covered too: the `with_legacy_name(…)` setter for a deprecated field
 is itself `#[deprecated]`, so the builder API is not a quieter way to set it.
 This holds whether the field's deprecation comes from the option or from your own
@@ -1076,9 +1081,9 @@ primary, so `demo::Size::TINY` is deprecated whenever `demo::Size::SMALL` is; so
 does its idiomatic `CamelCase` const (`Size::Tiny`) when
 `idiomatic_enum_aliases` is on. An alias is not a quiet way to reach a deprecated
 value. The direction is per value: an alias marked `[deprecated = true]` whose
-primary is live marks only the alias.
+primary is live marks only the alias and the alias's own idiomatic const.
 
-Three limits, all deliberate:
+Three things are not marked:
 
 - **Oneof variants are not marked yet.** A deprecated `oneof` member neither
   carries `#[deprecated]` nor widens the owned message's guard, so
@@ -1089,13 +1094,20 @@ Three limits, all deliberate:
   reading a deprecated field through `decode_view` gets no warning.
 - **Whole-message and whole-enum deprecation is not emitted**, matching prost.
 
-**Upgrading.** Buffa's own published types now warn where they did not before:
+A derive that you attach with `enum_attribute` or `type_attribute` can name a
+deprecated variant or field in code that the lint reports against your crate, as
+`derive(Arbitrary)` does for enum variants. If one warns, put
+`#[allow(deprecated)]` on the `mod` that includes the generated file.
+
+**Upgrading.** Code generated from your own `.proto` files, and from vendored
+ones, warns wherever your crate uses a deprecated field or enum value. Buffa's
+published types carry the marker too:
 `google.protobuf.Method::{syntax,edition}` and the deprecated option fields of
 `descriptor.proto` (`FieldOptions::weak`, `FileOptions::java_generate_equals_and_hash`,
 `{Message,Enum}Options::deprecated_legacy_json_field_conflicts`). If your crate
 builds under `-D warnings` or `#![deny(warnings)]`, an upgrade fails until you
-put `#[allow(deprecated)]` on the call sites that must keep using them. There is
-no opt-out knob yet; pin the version if you cannot absorb the diagnostics.
+put `#[allow(deprecated)]` on the uses that it keeps. Codegen has no option that
+turns the markers off; pin the version if you cannot absorb the diagnostics.
 
 To attach your own note (prost's marker is bare too), use `field_attribute` —
 and note it wins over the option-derived marker, since rustc permits only one

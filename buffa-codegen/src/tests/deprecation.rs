@@ -350,6 +350,99 @@ fn enum_default_naming_alias_of_deprecated_value_guards_codec() {
 }
 
 #[test]
+fn arbitrary_keeps_the_derive_when_only_an_alias_is_deprecated() {
+    // The derive names variants only, and every variant here is live.
+    let config = CodeGenConfig {
+        generate_arbitrary: true,
+        ..Default::default()
+    };
+    let mut file = enum_default_file();
+    file.enum_type[0].value = vec![
+        enum_value("BIG", 1),
+        deprecated_value(enum_value("LARGE", 1)),
+        enum_value("NEW", 2),
+    ];
+    file.message_type[0].field[0].default_value = Some("NEW".to_string());
+    let content = generate_squashed(file, &config);
+    assert!(
+        !content.contains("impl<'a>::arbitrary::Arbitrary<'a>forSize"),
+        "no variant is deprecated, so the derive stays: {content}"
+    );
+}
+
+#[test]
+fn idiomatic_const_of_a_deprecated_alias_is_deprecated() {
+    // `SIZE_LARGE` is deprecated by its own option while its variant
+    // `SIZE_BIG` is live; `Size::Large` names the alias, so it is marked, and
+    // `Size::Big` is not.
+    let config = CodeGenConfig {
+        idiomatic_enum_aliases: true,
+        ..Default::default()
+    };
+    let mut file = proto3_file("deprecated.proto");
+    file.package = Some("deprecate.test".to_string());
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Size".to_string()),
+        value: vec![
+            enum_value("SIZE_BIG", 0),
+            deprecated_value(enum_value("SIZE_LARGE", 0)),
+        ],
+        ..Default::default()
+    });
+    let content = generate_squashed(file, &config);
+    assert!(
+        content.contains(
+            "#[deprecated]#[allow(non_upper_case_globals)]pubconstLarge:Self=Self::SIZE_BIG"
+        ),
+        "the idiomatic const of the deprecated alias carries the marker: {content}"
+    );
+    assert!(
+        !content.contains(
+            "#[deprecated]#[allow(non_upper_case_globals)]pubconstBig:Self=Self::SIZE_BIG"
+        ),
+        "the idiomatic const of the live variant stays unmarked: {content}"
+    );
+}
+
+#[test]
+fn enum_default_naming_a_deprecated_alias_of_a_live_variant_guards_codec() {
+    let mut file = enum_default_file();
+    file.enum_type[0].value = vec![
+        enum_value("BIG", 1),
+        deprecated_value(enum_value("LARGE", 1)),
+        enum_value("NEW", 2),
+    ];
+    file.message_type[0].field[0].default_value = Some("LARGE".to_string());
+    let content = generate_squashed(file, &CodeGenConfig::default());
+    assert!(
+        content.contains("#[allow(deprecated)]impl::buffa::MessageforHolder"),
+        "the default names the deprecated alias const: {content}"
+    );
+}
+
+#[test]
+fn enum_default_naming_a_live_alias_beside_a_deprecated_one_is_unguarded() {
+    // `C` inherits from the variant `A`, which is live; the deprecated alias
+    // `B` between them does not pass its marker on.
+    let mut file = enum_default_file();
+    file.enum_type[0].value = vec![
+        enum_value("A", 1),
+        deprecated_value(enum_value("B", 1)),
+        enum_value("C", 1),
+    ];
+    file.message_type[0].field[0].default_value = Some("C".to_string());
+    let content = generate_squashed(file, &CodeGenConfig::default());
+    assert!(
+        content.contains("Size::C"),
+        "fixture sanity: the default must reach the generated code: {content}"
+    );
+    assert!(
+        !content.contains("#[allow(deprecated)]impl::buffa::MessageforHolder"),
+        "`C` is live, so the default needs no guard: {content}"
+    );
+}
+
+#[test]
 fn enum_default_naming_live_variant_with_deprecated_alias_is_unguarded() {
     // The marker flows from a variant to its aliases, not back: `BIG` stays
     // live when only its alias `LARGE` is deprecated.
@@ -390,8 +483,12 @@ fn arbitrary_for_an_enum_with_a_deprecated_value_is_an_impl_not_a_derive() {
         "an enum with a deprecated value implements Arbitrary by hand: {content}"
     );
     assert!(
-        content.contains("u.choose(<Selfas::buffa::Enumeration>::values()).copied()"),
-        "the impl picks from the declared values: {content}"
+        content.contains("letvalues=<Selfas::buffa::Enumeration>::values();"),
+        "the impl indexes the declared values: {content}"
+    );
+    assert!(
+        content.contains("<u32as::arbitrary::Arbitrary>::size_hint(depth)"),
+        "the impl reports the derive's size hint: {content}"
     );
     assert!(
         !content.contains("impl<'a>::arbitrary::Arbitrary<'a>forLive"),

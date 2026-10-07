@@ -117,24 +117,40 @@ fn alias_of_deprecated_value_is_still_the_declared_default() {
     assert_eq!(Tier::STARTER, Tier::BASIC);
 }
 
-/// An enum with a deprecated value implements `Arbitrary` without the derive,
-/// and still produces every declared variant, the deprecated ones included.
+/// An enum with a deprecated value implements `Arbitrary` without the derive.
+/// The impl maps input to variants exactly as the derive does, so marking a
+/// value deprecated does not change what a fuzz input builds.
 #[cfg(feature = "arbitrary")]
 #[test]
-fn arbitrary_covers_deprecated_enum_values() {
+fn arbitrary_for_a_deprecated_enum_matches_the_derive() {
     use arbitrary::{Arbitrary, Unstructured};
-    use std::collections::HashSet;
 
-    let seen: HashSet<i32> = (0..=u8::MAX)
-        .map(|byte| {
-            Routing::arbitrary(&mut Unstructured::new(&[byte; 8]))
-                .expect("eight bytes are enough to choose a variant")
-                .to_i32()
-        })
-        .collect();
-    let declared: HashSet<i32> = Routing::values().iter().map(|v| v.to_i32()).collect();
-    assert_eq!(seen, declared);
-    assert!(seen.contains(&Routing::LEGACY.to_i32()));
+    /// As many variants as `Routing` has, in the same order.
+    #[derive(Arbitrary, Clone, Copy, Debug)]
+    enum Derived {
+        Unspecified,
+        Legacy,
+        Modern,
+    }
+
+    assert_eq!(Routing::values().len(), 3);
+    assert_eq!(Routing::size_hint(0), Derived::size_hint(0));
+    for seed in 0..=u8::MAX {
+        // Vary the high byte of the little-endian `u32`, which decides the
+        // variant, and leave bytes after it for the next draw.
+        let raw = [0x5a, 0xa5, 0x3c, seed, 9, 9];
+        let mut ours = Unstructured::new(&raw);
+        let mut theirs = Unstructured::new(&raw);
+        let routing = Routing::arbitrary(&mut ours).unwrap();
+        let derived = Derived::arbitrary(&mut theirs).unwrap();
+        assert_eq!(routing, Routing::values()[derived as usize], "seed {seed}");
+        assert_eq!(ours.len(), theirs.len(), "seed {seed}");
+    }
+    // Exhausted input yields the first value, as it does for the derive.
+    assert_eq!(
+        Routing::arbitrary(&mut Unstructured::new(&[])).unwrap(),
+        Routing::values()[0]
+    );
 
     // The messages keep the derive.
     LegacyProfile::arbitrary(&mut Unstructured::new(&[7; 64])).expect("arbitrary message");

@@ -107,8 +107,7 @@ fn is_deprecated_value(value: &crate::generated::descriptor::EnumValueDescriptor
 /// which is deprecated by its own option or by its variant's: an alias is
 /// another name for the variant, so it must not be a way around the marker.
 pub(crate) fn deprecated_items(enum_desc: &EnumDescriptorProto) -> Vec<bool> {
-    let mut variant_deprecated: std::collections::HashMap<i32, bool> =
-        std::collections::HashMap::new();
+    let mut variant_deprecated: HashMap<i32, bool> = HashMap::new();
     enum_desc
         .value
         .iter()
@@ -159,13 +158,13 @@ pub fn generate_enum(
     // when the feature is enabled. Each entry is
     // `(proto_value_name, alias_target, own_ident_string)` where
     // `own_ident_string` is the value's existing variant/alias identifier (which
-    // a CamelCase alias must not duplicate) and `alias_target` is the variant a
-    // generated `const` would point at.
+    // a CamelCase alias must not duplicate, and which keys `deprecated_idents`)
+    // and `alias_target` is the variant a generated `const` would point at.
     let mut value_records: Vec<(String, Ident, String)> = Vec::new();
     let item_deprecated = deprecated_items(enum_desc);
-    // Drives the `#[allow(deprecated)]` on the items that name a deprecated
-    // variant or alias.
-    let has_deprecated_value = item_deprecated.contains(&true);
+    // Drives the `#[allow(deprecated)]` on the items that name variants. The
+    // generated code names an alias const nowhere, so a deprecated alias of a
+    // live variant needs no guard.
     let mut has_deprecated_variant = false;
     // Identifiers of the deprecated variants and alias consts, so the
     // idiomatic CamelCase const of each carries the marker too.
@@ -248,7 +247,7 @@ pub fn generate_enum(
         &deprecated_idents,
     );
 
-    let deprecated_value_allow = has_deprecated_value.then(|| quote! { #[allow(deprecated)] });
+    let deprecated_value_allow = has_deprecated_variant.then(|| quote! { #[allow(deprecated)] });
     let alias_block = if alias_consts.is_empty() && idiomatic_consts.is_empty() {
         quote! {}
     } else {
@@ -307,8 +306,8 @@ pub fn generate_enum(
     // own spans, so it warns for a `#[deprecated]` variant and takes no lint
     // attribute to stop it. An enum with such a variant gets an impl that
     // indexes `Enumeration::values()` instead. It draws a `u32` and maps it to
-    // a variant as the derive does, so the choice of impl does not change
-    // which message a fuzz input builds.
+    // a variant as the derive does (`derive_arbitrary` 1.4), so the choice of
+    // impl does not change which message a fuzz input builds.
     let (arbitrary_derive, arbitrary_impl) =
         match (ctx.config.generate_arbitrary, has_deprecated_variant) {
             (false, _) => (quote! {}, quote! {}),
@@ -452,7 +451,8 @@ pub fn generate_enum(
 /// disabled): `(proto_value_name, alias_target, own_ident_string)`, where
 /// `own_ident_string` is the value's existing variant/alias identifier (which a
 /// CamelCase alias must not duplicate). The proto names stay the definitive
-/// variants; this only adds aliases.
+/// variants; this only adds aliases. A const is `#[deprecated]` when
+/// `deprecated_idents` holds the `own_ident_string` of the value it comes from.
 ///
 /// Returns the `const` items to emit and a doc-note token stream (empty unless
 /// aliases were suppressed). The rule is all-or-nothing per enum: if any two

@@ -368,6 +368,40 @@ fn arbitrary_keeps_the_derive_when_only_an_alias_is_deprecated() {
         !content.contains("impl<'a>::arbitrary::Arbitrary<'a>forSize"),
         "no variant is deprecated, so the derive stays: {content}"
     );
+    assert_eq!(
+        content
+            .matches("#[cfg_attr(feature=\"arbitrary\",derive(::arbitrary::Arbitrary))]")
+            .count(),
+        2,
+        "`Holder` and `Size` both derive: {content}"
+    );
+}
+
+#[test]
+fn idiomatic_const_of_an_alias_inherits_the_variant_marker() {
+    // `SIZE_SMALL` has no option of its own; it is an alias of the deprecated
+    // variant `SIZE_OLD`, so `Size::Small` is marked as `Size::SIZE_SMALL` is.
+    let config = CodeGenConfig {
+        idiomatic_enum_aliases: true,
+        ..Default::default()
+    };
+    let mut file = proto3_file("deprecated.proto");
+    file.package = Some("deprecate.test".to_string());
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Size".to_string()),
+        value: vec![
+            deprecated_value(enum_value("SIZE_OLD", 0)),
+            enum_value("SIZE_SMALL", 0),
+        ],
+        ..Default::default()
+    });
+    let content = generate_squashed(file, &config);
+    assert!(
+        content.contains(
+            "#[deprecated]#[allow(non_upper_case_globals)]pubconstSmall:Self=Self::SIZE_OLD"
+        ),
+        "the idiomatic const of an inheriting alias carries the marker: {content}"
+    );
 }
 
 #[test]
@@ -483,8 +517,13 @@ fn arbitrary_for_an_enum_with_a_deprecated_value_is_an_impl_not_a_derive() {
         "an enum with a deprecated value implements Arbitrary by hand: {content}"
     );
     assert!(
-        content.contains("letvalues=<Selfas::buffa::Enumeration>::values();"),
-        "the impl indexes the declared values: {content}"
+        content.contains(
+            "letvalues=<Selfas::buffa::Enumeration>::values();\
+             letdraw=<u32as::arbitrary::Arbitrary>::arbitrary(u)?;\
+             letindex=(u64::from(draw)*values.len()asu64)>>32;\
+             ::core::result::Result::Ok(values[indexasusize])"
+        ),
+        "the impl maps a `u32` onto the declared values as the derive does: {content}"
     );
     assert!(
         content.contains("<u32as::arbitrary::Arbitrary>::size_hint(depth)"),

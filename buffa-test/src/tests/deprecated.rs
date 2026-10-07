@@ -133,7 +133,13 @@ fn arbitrary_for_a_deprecated_enum_matches_the_derive() {
         Modern,
     }
 
-    assert_eq!(Routing::values().len(), 3);
+    // Declaration order, which is the order the derive numbers variants in.
+    let declared = [
+        Routing::ROUTING_UNSPECIFIED,
+        Routing::LEGACY,
+        Routing::MODERN,
+    ];
+    assert_eq!(Routing::values(), declared);
     assert_eq!(Routing::size_hint(0), Derived::size_hint(0));
     for seed in 0..=u8::MAX {
         // Vary the high byte of the little-endian `u32`, which decides the
@@ -143,13 +149,13 @@ fn arbitrary_for_a_deprecated_enum_matches_the_derive() {
         let mut theirs = Unstructured::new(&raw);
         let routing = Routing::arbitrary(&mut ours).unwrap();
         let derived = Derived::arbitrary(&mut theirs).unwrap();
-        assert_eq!(routing, Routing::values()[derived as usize], "seed {seed}");
+        assert_eq!(routing, declared[derived as usize], "seed {seed}");
         assert_eq!(ours.len(), theirs.len(), "seed {seed}");
     }
     // Exhausted input yields the first value, as it does for the derive.
     assert_eq!(
         Routing::arbitrary(&mut Unstructured::new(&[])).unwrap(),
-        Routing::values()[0]
+        declared[0]
     );
 
     // The messages keep the derive.

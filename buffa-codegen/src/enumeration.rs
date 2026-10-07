@@ -287,11 +287,31 @@ pub fn generate_enum(
     } else {
         quote! {}
     };
-    let arbitrary_derive = if ctx.config.generate_arbitrary {
-        quote! { #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))] }
-    } else {
-        quote! {}
-    };
+    // `derive(Arbitrary)` names every variant in code that carries the enum's
+    // own spans, so it warns for a `#[deprecated]` variant and takes no lint
+    // attribute to stop it. An enum with such a variant gets an impl that
+    // picks from `Enumeration::values()` instead.
+    let (arbitrary_derive, arbitrary_impl) =
+        match (ctx.config.generate_arbitrary, has_deprecated_value) {
+            (false, _) => (quote! {}, quote! {}),
+            (true, false) => (
+                quote! { #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))] },
+                quote! {},
+            ),
+            (true, true) => (
+                quote! {},
+                quote! {
+                    #[cfg(feature = "arbitrary")]
+                    impl<'a> ::arbitrary::Arbitrary<'a> for #name_ident {
+                        fn arbitrary(
+                            u: &mut ::arbitrary::Unstructured<'a>,
+                        ) -> ::arbitrary::Result<Self> {
+                            u.choose(<Self as ::buffa::Enumeration>::values()).copied()
+                        }
+                    }
+                },
+            ),
+        };
 
     // Vtable-mode reflection: closed enums appear as bare `#name_ident` in
     // `RepeatedView` / `MapView`, so they need a `ReflectElement` impl for the
@@ -396,6 +416,8 @@ pub fn generate_enum(
         }
 
         #reflect_element_impl
+
+        #arbitrary_impl
     })
 }
 

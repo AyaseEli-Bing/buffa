@@ -25,3 +25,17 @@ message Holder {
 extend Holder {
   optional Size legacy_size = 100 [default = OLD];
 }
+
+// An alias of a deprecated value is deprecated too, without carrying the
+// option itself, and a default may name the alias.
+enum Tier {
+  option allow_alias = true;
+
+  BASIC = 1 [deprecated = true];
+  STARTER = 1;
+  PRO = 2;
+}
+
+message Plan {
+  required Tier tier = 1 [default = STARTER];
+}

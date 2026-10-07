@@ -106,3 +106,36 @@ fn deprecated_enum_default_is_still_the_declared_default() {
     );
     assert!(holder.note.is_none());
 }
+
+/// An alias of a deprecated value as the declared default: `STARTER` is
+/// number 1, whose variant is `BASIC`.
+#[test]
+fn alias_of_deprecated_value_is_still_the_declared_default() {
+    use crate::deprecated_proto2::{Plan, Tier};
+
+    assert_eq!(Plan::default().tier, Tier::BASIC);
+    assert_eq!(Tier::STARTER, Tier::BASIC);
+}
+
+/// An enum with a deprecated value implements `Arbitrary` without the derive,
+/// and still produces every declared variant, the deprecated ones included.
+#[cfg(feature = "arbitrary")]
+#[test]
+fn arbitrary_covers_deprecated_enum_values() {
+    use arbitrary::{Arbitrary, Unstructured};
+    use std::collections::HashSet;
+
+    let seen: HashSet<i32> = (0..=u8::MAX)
+        .map(|byte| {
+            Routing::arbitrary(&mut Unstructured::new(&[byte; 8]))
+                .expect("eight bytes are enough to choose a variant")
+                .to_i32()
+        })
+        .collect();
+    let declared: HashSet<i32> = Routing::values().iter().map(|v| v.to_i32()).collect();
+    assert_eq!(seen, declared);
+    assert!(seen.contains(&Routing::LEGACY.to_i32()));
+
+    // The messages keep the derive.
+    LegacyProfile::arbitrary(&mut Unstructured::new(&[7; 64])).expect("arbitrary message");
+}

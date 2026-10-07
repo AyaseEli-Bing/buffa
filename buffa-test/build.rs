@@ -743,11 +743,10 @@ fn main() {
 
     // `[deprecated = true]` — generated declarations carry `#[deprecated]` and
     // the impls that visit every field carry `#[allow(deprecated)]`. Views,
-    // text, JSON, lazy views and vtable reflection are on so every guarded
-    // surface is compiled, and `Audit` takes the table codec, where the field
-    // offsets are taken inside a `static` rather than an impl. The proof is that
-    // this crate compiles clean under `-D warnings`.
-    buffa_build::Config::new()
+    // text, JSON, lazy views, vtable reflection and the `Arbitrary` derive are
+    // on so every guarded surface is compiled. The proof is that this crate
+    // compiles clean under `-D warnings`.
+    let mut deprecated = buffa_build::Config::new()
         .files(&["protos/deprecated.proto"])
         .includes(&["protos/"])
         .generate_views(true)
@@ -755,7 +754,14 @@ fn main() {
         .generate_json(true)
         .lazy_views(true)
         .generate_reflection(true)
-        .codec_strategy_in(buffa_build::CodecStrategy::Table, &[".deprecated.Audit"])
+        .generate_arbitrary(true);
+    // `Audit` takes the table codec, where the field offsets are taken inside
+    // a `static` rather than an impl. The table codec needs Rust 1.77.
+    if rustc_minor() >= 77 {
+        deprecated =
+            deprecated.codec_strategy_in(buffa_build::CodecStrategy::Table, &[".deprecated.Audit"]);
+    }
+    deprecated
         .compile()
         .expect("buffa_build failed for deprecated.proto");
 
@@ -766,6 +772,7 @@ fn main() {
         .files(&["protos/deprecated_proto2.proto"])
         .includes(&["protos/"])
         .generate_views(true)
+        .generate_arbitrary(true)
         .compile()
         .expect("buffa_build failed for deprecated_proto2.proto");
 

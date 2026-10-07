@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **Codegen emits `#[deprecated]` for `[deprecated = true]`** (#564). A field or enum value with the option compiled without a marker, so a migration from prost lost every deprecation warning. The marker now goes on the field, on its `with_*` setter, on the enum variant, and on every alias of the variant (`allow_alias` values and the idiomatic `CamelCase` consts). The generated impls that visit every field carry `#[allow(deprecated)]`, so generated code stays free of warnings, including under `generate_arbitrary`. A field that already has `#[deprecated(...)]` from `field_attribute` keeps that attribute and its note. Encoding is unchanged: a deprecated value still round-trips in binary, JSON and text, and stays in `Enumeration::values()`. Oneof variants, view fields and whole messages or enums are not marked yet.
+time: 2026-10-05T04:06:17.816923+08:00

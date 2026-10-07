@@ -323,6 +323,90 @@ fn enum_default_naming_deprecated_value_guards_codec() {
 }
 
 #[test]
+fn enum_default_naming_alias_of_deprecated_value_guards_codec() {
+    // `SMALL` carries no option of its own; it is deprecated as an alias of
+    // `OLD`, and the default expression names it.
+    let mut file = enum_default_file();
+    file.enum_type[0].value.insert(1, enum_value("SMALL", 1));
+    file.message_type[0].field[0].default_value = Some("SMALL".to_string());
+    let content = generate_squashed(file, &CodeGenConfig::default());
+    assert!(
+        content
+            .contains("#[deprecated]#[allow(non_upper_case_globals)]pubconstSMALL:Self=Self::OLD"),
+        "fixture sanity: the alias inherits the marker: {content}"
+    );
+    assert!(
+        content.contains("Size::SMALL"),
+        "fixture sanity: the default must reach the generated code: {content}"
+    );
+    assert!(
+        content.contains("#[allow(deprecated)]impl::buffa::MessageforHolder"),
+        "the codec spells out Size::SMALL, so it must be guarded: {content}"
+    );
+    assert!(
+        content.contains("#[allow(deprecated)]impl::core::default::DefaultforHolder"),
+        "the custom Default spells out Size::SMALL: {content}"
+    );
+}
+
+#[test]
+fn enum_default_naming_live_variant_with_deprecated_alias_is_unguarded() {
+    // The marker flows from a variant to its aliases, not back: `BIG` stays
+    // live when only its alias `LARGE` is deprecated.
+    let mut file = enum_default_file();
+    file.enum_type[0].value = vec![
+        enum_value("BIG", 1),
+        deprecated_value(enum_value("LARGE", 1)),
+        enum_value("NEW", 2),
+    ];
+    file.message_type[0].field[0].default_value = Some("BIG".to_string());
+    let content = generate_squashed(file, &CodeGenConfig::default());
+    assert!(
+        content.contains("Size::BIG"),
+        "fixture sanity: the default must reach the generated code: {content}"
+    );
+    assert!(
+        !content.contains("#[allow(deprecated)]impl::buffa::MessageforHolder"),
+        "a default that names a live variant needs no guard: {content}"
+    );
+}
+
+#[test]
+fn arbitrary_for_an_enum_with_a_deprecated_value_is_an_impl_not_a_derive() {
+    let config = CodeGenConfig {
+        generate_arbitrary: true,
+        ..Default::default()
+    };
+    let mut file = enum_default_file();
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Live".to_string()),
+        value: vec![enum_value("LIVE_A", 0), enum_value("LIVE_B", 1)],
+        ..Default::default()
+    });
+    let content = generate_squashed(file, &config);
+    // The derive would name `Size::OLD` outside any `#[allow(deprecated)]`.
+    assert!(
+        content.contains("#[cfg(feature=\"arbitrary\")]impl<'a>::arbitrary::Arbitrary<'a>forSize{"),
+        "an enum with a deprecated value implements Arbitrary by hand: {content}"
+    );
+    assert!(
+        content.contains("u.choose(<Selfas::buffa::Enumeration>::values()).copied()"),
+        "the impl picks from the declared values: {content}"
+    );
+    assert!(
+        !content.contains("impl<'a>::arbitrary::Arbitrary<'a>forLive"),
+        "an enum without one keeps the derive: {content}"
+    );
+    assert_eq!(
+        content
+            .matches("#[cfg_attr(feature=\"arbitrary\",derive(::arbitrary::Arbitrary))]")
+            .count(),
+        2,
+        "`Holder` and `Live` derive, `Size` does not: {content}"
+    );
+}
+
+#[test]
 fn lazy_view_to_owned_allows_deprecated() {
     let config = CodeGenConfig {
         lazy_views: true,

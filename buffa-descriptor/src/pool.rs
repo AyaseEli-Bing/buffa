@@ -294,8 +294,13 @@ pub enum PoolError {
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
     /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
     ReservedFieldNumber { field: String, number: i32 },
-    /// A map entry message did not have exactly fields 1 (key) and 2 (value),
-    /// or the key type is not a valid map key per the protobuf spec.
+    /// A map field's entry message is malformed. The entry must have exactly
+    /// two fields, in this order: `key` with number 1, then `value` with
+    /// number 2. Each must be optional, and the key type must be an integer
+    /// type, `bool`, or `string` (see [`ScalarType::is_valid_map_key`]).
+    ///
+    /// `message` is the full name of the map field that uses the entry, and
+    /// the entry message is the field's type.
     MalformedMapEntry { message: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
@@ -558,9 +563,12 @@ impl core::fmt::Display for PoolError {
                     "field {field} uses field number {number}, which is reserved for the protobuf implementation"
                 )
             }
-            Self::MalformedMapEntry { message } => {
-                write!(f, "malformed map entry message {message}")
-            }
+            Self::MalformedMapEntry { message } => write!(
+                f,
+                "map field {message} has a malformed entry message: it needs exactly the optional \
+                 fields key = 1 and value = 2, in that order, and a key of an integer type, bool, \
+                 or string"
+            ),
             Self::DuplicateExtensionNumber { extendee, number } => {
                 write!(
                     f,
@@ -2626,13 +2634,25 @@ impl DescriptorPool {
         field_fqn: &str,
         scope: LinkScope<'_>,
     ) -> Result<(ScalarType, SingularKind), PoolError> {
-        let key_fd = entry.field.iter().find(|f| f.number == Some(1));
-        let val_fd = entry.field.iter().find(|f| f.number == Some(2));
-        let (Some(kf), Some(vf)) = (key_fd, val_fd) else {
+        // The key is the first field and the value the second, as protoc
+        // writes them and as it reads them back.
+        let [kf, vf] = entry.field.as_slice() else {
             return Err(PoolError::MalformedMapEntry {
                 message: field_fqn.to_string(),
             });
         };
+        if [("key", 1, kf), ("value", 2, vf)]
+            .into_iter()
+            .any(|(name, number, field)| {
+                field.name.as_deref() != Some(name)
+                    || field.number != Some(number)
+                    || field.label.unwrap_or_default() != Label::LABEL_OPTIONAL
+            })
+        {
+            return Err(PoolError::MalformedMapEntry {
+                message: field_fqn.to_string(),
+            });
+        }
         let key_ty = ScalarType::from_proto(kf.r#type.unwrap_or_default()).ok_or_else(|| {
             PoolError::MalformedMapEntry {
                 message: field_fqn.to_string(),

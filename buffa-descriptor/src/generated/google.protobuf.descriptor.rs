@@ -791,8 +791,8 @@ pub struct FileDescriptorProto {
         serde(
             rename = "publicDependency",
             alias = "public_dependency",
-            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-            deserialize_with = "::buffa::json_helpers::null_as_default"
+            with = "::buffa::json_helpers::proto_seq",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
         )
     )]
     pub public_dependency: ::buffa::alloc::vec::Vec<i32>,
@@ -805,8 +805,8 @@ pub struct FileDescriptorProto {
         serde(
             rename = "weakDependency",
             alias = "weak_dependency",
-            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-            deserialize_with = "::buffa::json_helpers::null_as_default"
+            with = "::buffa::json_helpers::proto_seq",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
         )
     )]
     pub weak_dependency: ::buffa::alloc::vec::Vec<i32>,
@@ -19046,8 +19046,8 @@ pub mod source_code_info {
             feature = "json",
             serde(
                 rename = "path",
-                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-                deserialize_with = "::buffa::json_helpers::null_as_default"
+                with = "::buffa::json_helpers::proto_seq",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
             )
         )]
         pub path: ::buffa::alloc::vec::Vec<i32>,
@@ -19062,8 +19062,8 @@ pub mod source_code_info {
             feature = "json",
             serde(
                 rename = "span",
-                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-                deserialize_with = "::buffa::json_helpers::null_as_default"
+                with = "::buffa::json_helpers::proto_seq",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
             )
         )]
         pub span: ::buffa::alloc::vec::Vec<i32>,
@@ -19755,8 +19755,8 @@ pub mod generated_code_info {
             feature = "json",
             serde(
                 rename = "path",
-                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-                deserialize_with = "::buffa::json_helpers::null_as_default"
+                with = "::buffa::json_helpers::proto_seq",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
             )
         )]
         pub path: ::buffa::alloc::vec::Vec<i32>,

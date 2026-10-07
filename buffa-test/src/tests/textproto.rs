@@ -16,6 +16,85 @@ use buffa::{EnumValue, MessageField};
 // ── scalars ─────────────────────────────────────────────────────────────────
 
 #[test]
+fn direct_scalar_values_require_colon() {
+    for valid in [
+        "f_int32: -7",
+        "f_int64: 7",
+        "f_uint32: 7",
+        "f_uint64: 7",
+        "f_sint32: -7",
+        "f_sint64: -7",
+        "f_fixed32: 7",
+        "f_fixed64: 7",
+        "f_sfixed32: -7",
+        "f_sfixed64: -7",
+        "f_float: 1.5",
+        "f_double: -inf",
+        "f_bool: true",
+    ] {
+        decode_from_str::<AllScalars>(valid).unwrap();
+        let invalid = valid.replacen(':', "", 1);
+        let err = decode_from_str::<AllScalars>(&invalid).unwrap_err();
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: "':' before scalar value",
+            },
+            "input: {invalid:?}"
+        );
+    }
+    for valid in [
+        "name: \"Alice\"",
+        "avatar: '\\xFF'",
+        "status: ACTIVE",
+        "email: 'a@b'",
+        "maybe_age: 7",
+        "tags: 'tag'",
+        "lucky_numbers: 7",
+        "address { city: 'Paris' }",
+    ] {
+        decode_from_str::<Person>(valid).unwrap();
+        let invalid = valid.replacen(':', "", 1);
+        assert!(
+            decode_from_str::<Person>(&invalid).is_err(),
+            "input: {invalid:?}"
+        );
+    }
+    for input in [
+        "address {}",
+        "address <city: 'Paris'>",
+        "addresses [{}, <city: 'Paris'>]",
+        "addresses []",
+    ] {
+        decode_from_str::<Person>(input).unwrap();
+    }
+}
+
+#[test]
+fn scalar_lists_require_colon() {
+    for valid in [
+        "tags: ['a']",
+        "tags: ['a', 'b']",
+        "lucky_numbers: [7]",
+        "lucky_numbers: [7, 8]",
+    ] {
+        decode_from_str::<Person>(valid).unwrap();
+        let invalid = valid.replacen(':', "", 1);
+        let err = decode_from_str::<Person>(&invalid).unwrap_err();
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: "':' before scalar value",
+            },
+            "input: {invalid:?}"
+        );
+    }
+    // A map is a list of entry messages, so it needs no colon.
+    let inv: Inventory = decode_from_str("stock [{ key: 'apples' value: 10 }]").unwrap();
+    assert_eq!(inv.stock.get("apples"), Some(&10));
+}
+
+#[test]
 fn all_scalars_golden() {
     // Every numeric scalar type. Implicit presence: zero values suppressed.
     let msg = AllScalars {
@@ -159,6 +238,30 @@ fn person_pretty_output() {
     });
     let text = encode_to_string_pretty(&p);
     assert_eq!(text, "id: 1\naddress {\n  city: \"London\"\n}\n");
+}
+
+#[test]
+fn uppercase_hex_escapes_in_string_and_bytes_fields() {
+    let input = r#"name: "\XC3\XA9" avatar: '\X00\X7f\X80\Xff' tags: ["\X41" 'B', "\X414"]"#;
+    let msg: Person = decode_from_str(input).unwrap();
+    assert_eq!(msg.name, "é");
+    assert_eq!(msg.avatar, [0x00, 0x7F, 0x80, 0xFF]);
+    assert_eq!(msg.tags, ["AB", "A4"]);
+    let back: Person = decode_from_str(&encode_to_string(&msg)).unwrap();
+    assert_eq!(back, msg);
+}
+
+#[test]
+fn uppercase_hex_escapes_preserve_string_validation() {
+    let err = decode_from_str::<Person>(r#"name: "\Xff""#).unwrap_err();
+    assert_eq!(err.kind, ParseErrorKind::InvalidUtf8);
+    for input in [r#"name: "\X""#, r#"avatar: "\Xg""#] {
+        let err = decode_from_str::<Person>(input).unwrap_err();
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::InvalidString("invalid \\x escape")
+        );
+    }
 }
 
 // ── enum ────────────────────────────────────────────────────────────────────

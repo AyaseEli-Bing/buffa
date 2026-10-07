@@ -294,6 +294,14 @@ pub enum PoolError {
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
     /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
     ReservedFieldNumber { field: String, number: i32 },
+    /// A field sets `packed = true` but is not a repeated numeric, bool, or
+    /// enum field. Strings, bytes, messages, and groups cannot be packed.
+    InvalidPackedOption { field: String },
+    /// A field sets `features.repeated_field_encoding` where it cannot apply:
+    /// the field is not repeated, or the value is `PACKED` and the field is
+    /// not a repeated numeric, bool, or enum field. The fields of a map entry
+    /// are exempt, because protoc copies the map field's features onto them.
+    InvalidRepeatedFieldEncoding { field: String },
     /// A map field's entry message is malformed. The entry must have exactly
     /// two fields, in this order: `key` with number 1, then `value` with
     /// number 2. Each must be optional, and the key type must be an integer
@@ -563,6 +571,15 @@ impl core::fmt::Display for PoolError {
                     "field {field} uses field number {number}, which is reserved for the protobuf implementation"
                 )
             }
+            Self::InvalidPackedOption { field } => write!(
+                f,
+                "field {field} sets packed = true but is not a repeated numeric, bool, or enum field"
+            ),
+            Self::InvalidRepeatedFieldEncoding { field } => write!(
+                f,
+                "field {field} sets features.repeated_field_encoding, but the field is not repeated or \
+                 its elements cannot be packed"
+            ),
             Self::MalformedMapEntry { message } => write!(
                 f,
                 "map field {message} has a malformed entry message: it needs exactly the optional \
@@ -2433,9 +2450,29 @@ impl DescriptorPool {
             kind,
             FieldKind::List(SingularKind::Scalar(s)) if !matches!(s, ScalarType::String | ScalarType::Bytes)
         ) || matches!(kind, FieldKind::List(SingularKind::Enum(_)));
+        let packed_option = f.options.as_option().and_then(|o| o.packed);
+        if packed_option == Some(true) && !packable {
+            return Err(PoolError::InvalidPackedOption { field: field_fqn });
+        }
+        let in_map_entry = containing_msg
+            .and_then(|m| m.options.as_option())
+            .and_then(|o| o.map_entry)
+            == Some(true);
+        // The feature is the editions spelling of the option. Only the
+        // field's own setting counts: an inherited one applies to the fields
+        // it fits.
+        if let Some(encoding) =
+            features::field_features(f).and_then(|fs| fs.repeated_field_encoding)
+        {
+            let applies =
+                is_repeated && (packable || encoding != feature_set::RepeatedFieldEncoding::PACKED);
+            if !applies && !in_map_entry {
+                return Err(PoolError::InvalidRepeatedFieldEncoding { field: field_fqn });
+            }
+        }
         let packed = if packable {
             // An explicit [packed = ...] option wins over feature resolution.
-            match f.options.as_option().and_then(|o| o.packed) {
+            match packed_option {
                 Some(p) => p,
                 None => resolved.repeated_field_encoding == RepeatedFieldEncoding::Packed,
             }

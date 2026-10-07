@@ -248,6 +248,13 @@ pub enum PoolError {
     DuplicateFieldNumber { message: String, number: u32 },
     /// Two fields in one message claim the same proto or JSON name.
     DuplicateFieldName { message: String, name: String },
+    /// A field's JSON name contains NUL, or the JSON name of a field that is
+    /// not an extension starts with `[` and ends with `]`. A JSON parser reads
+    /// such a key as the name of an extension.
+    ///
+    /// The bracket rule is off for a message that sets the
+    /// `deprecated_legacy_json_field_conflicts` option, as it is in protoc.
+    InvalidJsonName { field: String, name: String },
     /// A field refers to a oneof declaration that does not exist in its
     /// containing message.
     InvalidOneofIndex {
@@ -512,6 +519,16 @@ impl core::fmt::Display for PoolError {
                     f,
                     "message {message} declares field name {name:?} more than once"
                 )
+            }
+            Self::InvalidJsonName { field, name } => {
+                if name.contains('\0') {
+                    write!(f, "field {field} has JSON name {name:?} containing NUL")
+                } else {
+                    write!(
+                        f,
+                        "field {field} has JSON name {name:?}, which has the form of an extension key"
+                    )
+                }
             }
             Self::InvalidOneofIndex {
                 message,
@@ -2497,6 +2514,23 @@ impl DescriptorPool {
             .json_name
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
+        // protoc applies the bracket rule with its JSON name conflict checks,
+        // which the message option turns off. The option is deprecated and
+        // protoc still honours it.
+        #[allow(deprecated)]
+        let checks_json_name_form = containing_msg.is_some_and(|m| {
+            !m.options
+                .deprecated_legacy_json_field_conflicts
+                .unwrap_or(false)
+        });
+        let looks_like_extension_key =
+            checks_json_name_form && json_name.starts_with('[') && json_name.ends_with(']');
+        if json_name.contains('\0') || looks_like_extension_key {
+            return Err(PoolError::InvalidJsonName {
+                field: field_fqn,
+                name: json_name,
+            });
+        }
 
         // Validate the field number. The wire format reserves 0, and the
         // upper bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits
